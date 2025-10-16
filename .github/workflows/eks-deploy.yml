@@ -47,6 +47,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
           aws-region: us-east-1
+          role-session-name: GitHubActions-Deploy
 
       # Step 5: Validate AWS connectivity
       - name: Verify AWS identity
