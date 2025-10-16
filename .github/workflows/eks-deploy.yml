@@ -15,30 +15,26 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ${{ github.workspace }}//Ansible
+        working-directory: ${{ github.workspace }}/Ansible
 
     steps:
-      # Step 1: Checkout repository
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Set up Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y unzip curl python3-pip
+          sudo apt install -y python3-pip unzip curl
           pip3 install ansible boto3 botocore
-          ansible-galaxy collection install community.aws amazon.aws
-          ansible-galaxy collection install kubernetes.core
 
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r requirements.yaml --force
 
-      # Step 4: Configure AWS credentials via OIDC role
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -46,10 +42,8 @@ jobs:
           aws-region: us-east-1
           role-session-name: GitHubActions-Deploy
 
-      # Step 5: Validate AWS connectivity
       - name: Verify AWS identity
         run: aws sts get-caller-identity
 
-      # Step 6: Run the Ansible Playbook
       - name: Run Ansible Playbook to deploy EKS
         run: ansible-playbook create-eks.yml
