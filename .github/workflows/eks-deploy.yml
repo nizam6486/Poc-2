@@ -33,7 +33,9 @@ jobs:
           pip3 install ansible boto3 botocore
 
       - name: Install Ansible collections
-        run: ansible-galaxy collection install -r requirements.yaml --force
+        run: |
+          ansible-galaxy collection install -r requirements.yaml --force
+        working-directory: ${{ github.workspace }}/Ansible
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
