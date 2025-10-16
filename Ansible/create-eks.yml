@@ -5,6 +5,7 @@
   gather_facts: false
   collections:
     - community.aws
+    - amazon.aws
   vars:
     region: us-east-1
     cluster_name: java-app-eks
@@ -21,7 +22,7 @@
   tasks:
     # ---------------- VPC ----------------
     - name: Create VPC
-      ec2_vpc_net:
+      community.aws.ec2_vpc_net:
         name: "{{ cluster_name }}-vpc"
         cidr_block: "{{ vpc_cidr }}"
         region: "{{ region }}"
@@ -30,7 +31,7 @@
       register: vpc
 
     - name: Create Internet Gateway
-      ec2_vpc_igw:
+      community.aws.ec2_vpc_igw:
         vpc_id: "{{ vpc.vpc.id }}"
         state: present
         region: "{{ region }}"
@@ -39,7 +40,7 @@
       register: igw
 
     - name: Create Public Subnet 1
-      ec2_vpc_subnet:
+      community.aws.ec2_vpc_subnet:
         vpc_id: "{{ vpc.vpc.id }}"
         cidr: "{{ public_subnet_1 }}"
         az: "{{ region }}a"
@@ -49,7 +50,7 @@
       register: subnet1
 
     - name: Create Public Subnet 2
-      ec2_vpc_subnet:
+      community.aws.ec2_vpc_subnet:
         vpc_id: "{{ vpc.vpc.id }}"
         cidr: "{{ public_subnet_2 }}"
         az: "{{ region }}b"
@@ -59,7 +60,7 @@
       register: subnet2
 
     - name: Create Route Table
-      ec2_vpc_route_table:
+      community.aws.ec2_vpc_route_table:
         vpc_id: "{{ vpc.vpc.id }}"
         region: "{{ region }}"
         tags:
@@ -67,7 +68,7 @@
       register: route_table
 
     - name: Associate subnets with route table
-      ec2_vpc_route_table:
+      community.aws.ec2_vpc_route_table:
         vpc_id: "{{ vpc.vpc.id }}"
         region: "{{ region }}"
         route_table_id: "{{ route_table.route_table.id }}"
@@ -81,7 +82,7 @@
 
     # ---------------- Security Group ----------------
     - name: Create security group for EKS nodes
-      ec2_group:
+      community.aws.ec2_group:
         name: "{{ cluster_name }}-sg"
         description: Security group for EKS nodes
         vpc_id: "{{ vpc.vpc.id }}"
@@ -99,7 +100,7 @@
 
     # ---------------- IAM Roles ----------------
     - name: Create IAM role for EKS Cluster
-      iam_role:
+      community.aws.iam_role:
         name: "{{ cluster_name }}-cluster-role"
         assume_role_policy_document: >
           {
@@ -113,7 +114,7 @@
       register: cluster_role
 
     - name: Attach managed policies to EKS cluster role
-      iam_managed_policy:
+      community.aws.iam_managed_policy:
         iam_type: role
         iam_name: "{{ cluster_role.role.name }}"
         policy_arn: "{{ item }}"
@@ -123,7 +124,7 @@
         - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
 
     - name: Create IAM role for EKS NodeGroup
-      iam_role:
+      community.aws.iam_role:
         name: "{{ cluster_name }}-node-role"
         assume_role_policy_document: >
           {
@@ -137,7 +138,7 @@
       register: node_role
 
     - name: Attach managed policies to node role
-      iam_managed_policy:
+      community.aws.iam_managed_policy:
         iam_type: role
         iam_name: "{{ node_role.role.name }}"
         policy_arn: "{{ item }}"
@@ -149,7 +150,7 @@
 
     # ---------------- ECR Repository ----------------
     - name: Create ECR repository
-      ecr_repository:
+      amazon.aws.ecr_repository:
         name: "{{ ecr_repo_name }}"
         state: present
         region: "{{ region }}"
@@ -157,7 +158,7 @@
 
     # ---------------- EKS Cluster ----------------
     - name: Create EKS cluster
-      eks_cluster:
+      community.aws.eks_cluster:
         name: "{{ cluster_name }}"
         version: "1.29"
         role_arn: "{{ cluster_role.role.arn }}"
@@ -174,7 +175,7 @@
 
     # ---------------- NodeGroup ----------------
     - name: Create EKS NodeGroup
-      eks_nodegroup:
+      community.aws.eks_nodegroup:
         cluster_name: "{{ cluster_name }}"
         nodegroup_name: "{{ nodegroup_name }}"
         node_role_arn: "{{ node_role.role.arn }}"
@@ -199,4 +200,3 @@
           - "EKS Cluster: {{ eks.cluster.name }}"
           - "Nodegroup: {{ nodegroup.nodegroup.nodegroupName }}"
           - "ECR Repo: {{ ecr.repository.repositoryUri }}"
-

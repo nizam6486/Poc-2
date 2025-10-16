@@ -34,7 +34,9 @@ jobs:
           sudo apt update -y
           sudo apt install -y unzip curl python3-pip
           pip3 install ansible boto3 botocore
-          ansible-galaxy collection install community.aws
+          ansible-galaxy collection install community.aws amazon.aws
+          ansible-galaxy collection install kubernetes.core
+
 
       # Step 4: Configure AWS credentials via OIDC role
       - name: Configure AWS credentials
