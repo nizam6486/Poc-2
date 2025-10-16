@@ -4,7 +4,12 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      working-directory:
+       required: true
+       default: Ansible
+       type: string
 
 permissions:
   id-token: write
@@ -13,6 +18,9 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}/${{ inputs.working-directory }}
 
     steps:
       # Step 1: Checkout repository
@@ -42,6 +50,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
           aws-region: us-east-1
+          audience: sts.amazonaws.com
 
       # Step 5: Validate AWS connectivity
       - name: Verify AWS credentials
