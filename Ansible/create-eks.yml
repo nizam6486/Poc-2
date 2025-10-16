@@ -4,8 +4,8 @@
   connection: local
   gather_facts: false
   collections:
-    - community.aws
     - amazon.aws
+    - community.aws
   vars:
     region: us-east-1
     cluster_name: java-app-eks
@@ -22,7 +22,7 @@
   tasks:
     # ---------------- VPC ----------------
     - name: Create VPC
-      community.aws.ec2_vpc_net:
+      amazon.aws.ec2_vpc_net:
         name: "{{ cluster_name }}-vpc"
         cidr_block: "{{ vpc_cidr }}"
         region: "{{ region }}"
@@ -31,7 +31,7 @@
       register: vpc
 
     - name: Create Internet Gateway
-      community.aws.ec2_vpc_igw:
+      amazon.aws.ec2_vpc_igw:
         vpc_id: "{{ vpc.vpc.id }}"
         state: present
         region: "{{ region }}"
@@ -40,7 +40,7 @@
       register: igw
 
     - name: Create Public Subnet 1
-      community.aws.ec2_vpc_subnet:
+      amazon.aws.ec2_vpc_subnet:
         vpc_id: "{{ vpc.vpc.id }}"
         cidr: "{{ public_subnet_1 }}"
         az: "{{ region }}a"
@@ -50,7 +50,7 @@
       register: subnet1
 
     - name: Create Public Subnet 2
-      community.aws.ec2_vpc_subnet:
+      amazon.aws.ec2_vpc_subnet:
         vpc_id: "{{ vpc.vpc.id }}"
         cidr: "{{ public_subnet_2 }}"
         az: "{{ region }}b"
@@ -60,7 +60,7 @@
       register: subnet2
 
     - name: Create Route Table
-      community.aws.ec2_vpc_route_table:
+      amazon.aws.ec2_vpc_route_table:
         vpc_id: "{{ vpc.vpc.id }}"
         region: "{{ region }}"
         tags:
@@ -68,7 +68,7 @@
       register: route_table
 
     - name: Associate subnets with route table
-      community.aws.ec2_vpc_route_table:
+      amazon.aws.ec2_vpc_route_table:
         vpc_id: "{{ vpc.vpc.id }}"
         region: "{{ region }}"
         route_table_id: "{{ route_table.route_table.id }}"
@@ -82,17 +82,23 @@
 
     # ---------------- Security Group ----------------
     - name: Create security group for EKS nodes
-      community.aws.ec2_group:
+      amazon.aws.ec2_security_group:
         name: "{{ cluster_name }}-sg"
         description: Security group for EKS nodes
         vpc_id: "{{ vpc.vpc.id }}"
         region: "{{ region }}"
         rules:
           - proto: tcp
-            ports:
-              - 22
-              - 80
-              - 443
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 80
+            to_port: 80
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 443
+            to_port: 443
             cidr_ip: 0.0.0.0/0
         tags:
           Name: "{{ cluster_name }}-sg"
@@ -100,47 +106,55 @@
 
     # ---------------- IAM Roles ----------------
     - name: Create IAM role for EKS Cluster
-      community.aws.iam_role:
+      amazon.aws.iam_role:
         name: "{{ cluster_name }}-cluster-role"
-        assume_role_policy_document: >
+        assume_role_policy_document: |
           {
             "Version": "2012-10-17",
-            "Statement": [{
-              "Effect": "Allow",
-              "Principal": { "Service": "eks.amazonaws.com" },
-              "Action": "sts:AssumeRole"
-            }]
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "eks.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole"
+              }
+            ]
           }
       register: cluster_role
 
     - name: Attach managed policies to EKS cluster role
-      community.aws.iam_managed_policy:
+      amazon.aws.iam_policy:
         iam_type: role
-        iam_name: "{{ cluster_role.role.name }}"
+        iam_name: "{{ cluster_role.role.role_name }}"
         policy_arn: "{{ item }}"
         state: present
       loop:
         - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
-        - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+        - arn:aws:iam::aws:policy/AmazonEKSVPCResourceController
 
     - name: Create IAM role for EKS NodeGroup
-      community.aws.iam_role:
+      amazon.aws.iam_role:
         name: "{{ cluster_name }}-node-role"
-        assume_role_policy_document: >
+        assume_role_policy_document: |
           {
             "Version": "2012-10-17",
-            "Statement": [{
-              "Effect": "Allow",
-              "Principal": { "Service": "ec2.amazonaws.com" },
-              "Action": "sts:AssumeRole"
-            }]
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "ec2.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole"
+              }
+            ]
           }
       register: node_role
 
     - name: Attach managed policies to node role
-      community.aws.iam_managed_policy:
+      amazon.aws.iam_policy:
         iam_type: role
-        iam_name: "{{ node_role.role.name }}"
+        iam_name: "{{ node_role.role.role_name }}"
         policy_arn: "{{ item }}"
         state: present
       loop:
@@ -160,13 +174,13 @@
     - name: Create EKS cluster
       community.aws.eks_cluster:
         name: "{{ cluster_name }}"
-        version: "1.29"
+        version: "1.32"
         role_arn: "{{ cluster_role.role.arn }}"
-        resources_vpc_config:
-          subnetIds:
+        vpc:
+          subnets:
             - "{{ subnet1.subnet.id }}"
             - "{{ subnet2.subnet.id }}"
-          securityGroupIds:
+          security_groups:
             - "{{ sg.group_id }}"
         region: "{{ region }}"
         wait: yes
@@ -177,19 +191,21 @@
     - name: Create EKS NodeGroup
       community.aws.eks_nodegroup:
         cluster_name: "{{ cluster_name }}"
+        name: "{{ nodegroup_name }}"
         nodegroup_name: "{{ nodegroup_name }}"
-        node_role_arn: "{{ node_role.role.arn }}"
+        node_role: "{{ node_role.role.arn }}"
         subnets:
           - "{{ subnet1.subnet.id }}"
           - "{{ subnet2.subnet.id }}"
         scaling_config:
-          desired_size: "{{ desired_size }}"
           min_size: "{{ min_size }}"
           max_size: "{{ max_size }}"
-        instance_types: ["{{ instance_type }}"]
+          desired_size: "{{ desired_size }}"
+        instance_types:
+          - "{{ instance_type }}"
         region: "{{ region }}"
-        state: present
         wait: yes
+        state: present
       register: nodegroup
 
     - name: Show output summary
@@ -198,5 +214,5 @@
           - "VPC: {{ vpc.vpc.id }}"
           - "Subnets: {{ subnet1.subnet.id }}, {{ subnet2.subnet.id }}"
           - "EKS Cluster: {{ eks.cluster.name }}"
-          - "Nodegroup: {{ nodegroup.nodegroup.nodegroupName }}"
-          - "ECR Repo: {{ ecr.repository.repositoryUri }}"
+          - "Nodegroup: {{ nodegroup.nodegroup.nodegroup_name }}"
+          - "ECR Repo: {{ ecr.repository.repository_uri }}"
