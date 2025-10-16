@@ -6,6 +6,7 @@
   collections:
     - amazon.aws
     - community.aws
+
   vars:
     region: us-east-1
     cluster_name: java-app-eks
@@ -22,7 +23,7 @@
   tasks:
     # ---------------- VPC ----------------
     - name: Create VPC
-      amazon.aws.ec2_vpc_net:
+      amazon.aws.ec2_vpc:
         name: "{{ cluster_name }}-vpc"
         cidr_block: "{{ vpc_cidr }}"
         region: "{{ region }}"
@@ -67,18 +68,20 @@
           Name: "{{ cluster_name }}-rt"
       register: route_table
 
-    - name: Associate subnets with route table
-      amazon.aws.ec2_vpc_route_table:
-        vpc_id: "{{ vpc.vpc.id }}"
-        region: "{{ region }}"
+    - name: Add internet route to route table
+      amazon.aws.ec2_route:
         route_table_id: "{{ route_table.route_table.id }}"
-        subnets:
-          - "{{ subnet1.subnet.id }}"
-          - "{{ subnet2.subnet.id }}"
-        routes:
-          - dest: 0.0.0.0/0
-            gateway_id: "{{ igw.gateway_id }}"
+        destination_cidr_block: 0.0.0.0/0
+        gateway_id: "{{ igw.gateway_id }}"
         state: present
+
+    - name: Associate subnets with route table
+      amazon.aws.ec2_vpc_route_table_association:
+        route_table_id: "{{ route_table.route_table.id }}"
+        subnet_id: "{{ item }}"
+      loop:
+        - "{{ subnet1.subnet.id }}"
+        - "{{ subnet2.subnet.id }}"
 
     # ---------------- Security Group ----------------
     - name: Create security group for EKS nodes
@@ -123,15 +126,12 @@
           }
       register: cluster_role
 
-    - name: Attach managed policies to EKS cluster role
+    - name: Attach EKS cluster policy
       amazon.aws.iam_policy:
         iam_type: role
         iam_name: "{{ cluster_role.role.role_name }}"
-        policy_arn: "{{ item }}"
+        policy_arn: arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
         state: present
-      loop:
-        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
-        - arn:aws:iam::aws:policy/AmazonEKSVPCResourceController
 
     - name: Create IAM role for EKS NodeGroup
       amazon.aws.iam_role:
@@ -151,7 +151,7 @@
           }
       register: node_role
 
-    - name: Attach managed policies to node role
+    - name: Attach node group policies
       amazon.aws.iam_policy:
         iam_type: role
         iam_name: "{{ node_role.role.role_name }}"
@@ -174,7 +174,7 @@
     - name: Create EKS cluster
       community.aws.eks_cluster:
         name: "{{ cluster_name }}"
-        version: "1.32"
+        version: "1.29"
         role_arn: "{{ cluster_role.role.arn }}"
         vpc:
           subnets:
@@ -192,7 +192,6 @@
       community.aws.eks_nodegroup:
         cluster_name: "{{ cluster_name }}"
         name: "{{ nodegroup_name }}"
-        nodegroup_name: "{{ nodegroup_name }}"
         node_role: "{{ node_role.role.arn }}"
         subnets:
           - "{{ subnet1.subnet.id }}"
