@@ -1,0 +1,22 @@
+---
+env_name: "uat-edfx"
+aws_region: "us-east-1"
+# EKS Control Plane Security Group Rules
+eks_controlplane_rules:
+  - proto: tcp
+    ports: [443]
+    cidr_ip: "0.0.0.0/0"
+    rule_desc: "Kubernetes API Server"
+
+# EKS Worker Nodes Security Group Rules
+eks_workernodes_rules:
+  - proto: all
+    group_name: "eks-controlplane-{{ env_name }}"
+    rule_desc: "Allow all from control plane"
+  - proto: all
+    group_name: "eks-workernodes-{{ env_name }}"
+    rule_desc: "Allow all between worker nodes"
+  - proto: tcp
+    ports: [1025, 65535]
+    cidr_ip: "{{ vpc_cidr }}"
+    rule_desc: "NodePort services"

@@ -1,0 +1,47 @@
+---
+# EKS Cluster IAM Role Configuration
+eks_cluster_managed_policies:
+  - "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  - "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
+
+# EKS Node Group IAM Role Configuration
+eks_nodegroup_managed_policies:
+  - "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  - "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+# Trust Policies (as YAML, will be converted to JSON)
+# eks_cluster_trust_policy:
+#   Version: "2012-10-17"
+#   Statement:
+#     - Effect: "Allow"
+#       Principal:
+#         Service: "eks.amazonaws.com"
+#       Action: "sts:AssumeRole"
+
+# eks_nodegroup_trust_policy:
+#   Version: "2012-10-17"
+#   Statement:
+#     - Effect: "Allow"
+#       Principal:
+#         Service: "ec2.amazonaws.com"
+#       Action: "sts:AssumeRole"
+
+# ecr_policy_document:
+#   Version: "2012-10-17"
+#   Statement:
+#     - Effect: "Allow"
+#       Action:
+#         - "ecr:GetAuthorizationToken"
+#         - "ecr:BatchCheckLayerAvailability"
+#         - "ecr:GetDownloadUrlForLayer"
+#         - "ecr:GetRepositoryPolicy"
+#         - "ecr:DescribeRepositories"
+#         - "ecr:ListImages"
+#         - "ecr:DescribeImages"
+#         - "ecr:BatchGetImage"
+#         - "ecr:GetLifecyclePolicy"
+#         - "ecr:GetLifecyclePolicyPreview"
+#         - "ecr:ListTagsForResource"
+#         - "ecr:DescribeImageScanFindings"
+#       Resource: "*"

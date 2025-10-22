@@ -1,0 +1,117 @@
+---
+- name: Gather existing VPC information
+  amazon.aws.ec2_vpc_net_info:
+    region: "{{ aws_region }}"
+    filters:
+      "tag:Environment": "{{ env_name }}"
+      "tag:ManagedBy": "ansible"
+  register: vpc_info
+
+- name: Gather existing private subnets
+  amazon.aws.ec2_vpc_subnet_info:
+    region: "{{ aws_region }}"
+    filters:
+      "tag:Environment": "{{ env_name }}"
+      "tag:Type": "private"
+  register: private_subnets_info
+
+- name: Get existing EKS Cluster Role (Control Plane)
+  amazon.aws.iam_role_info:
+    name: "eks-cluster-role"
+  register: cluster_role_info
+
+- name: Get existing EKS Node Group Role (Worker Nodes)
+  amazon.aws.iam_role_info:
+    name: "eks-nodegroup-role"
+  register: nodegroup_role_info
+
+- name: Get existing EKS Control Plane Security Group
+  amazon.aws.ec2_security_group_info:
+    region: "{{ aws_region }}"
+    filters:
+      "tag:Name": "eks-controlplane-{{ env_name }}"
+      "tag:Environment": "{{ env_name }}"
+  register: control_plane_sg_info
+
+- name: Get existing EKS Worker Nodes Security Group
+  amazon.aws.ec2_security_group_info:
+    region: "{{ aws_region }}"
+    filters:
+      "tag:Name": "eks-workernodes-{{ env_name }}"
+      "tag:Environment": "{{ env_name }}"
+  register: worker_nodes_sg_info
+
+- name: Set facts for EKS configuration
+  set_fact:
+    vpc_id: "{{ vpc_info.vpcs[0].id }}"
+    private_subnet_ids: "{{ private_subnets_info.subnets | map(attribute='id') | list }}"
+    cluster_role_arn: "{{ cluster_role_info.iam_roles[0].arn }}"
+    nodegroup_role_arn: "{{ nodegroup_role_info.iam_roles[0].arn }}"
+    control_plane_sg_id: "{{ control_plane_sg_info.security_groups[0].group_id }}"
+    worker_nodes_sg_id: "{{ worker_nodes_sg_info.security_groups[0].group_id }}"
+
+- name: Debug all existing resources
+  debug:
+    msg: |
+      🔗 USING EXISTING ANSIBLE RESOURCES:
+      - VPC: {{ vpc_id }}
+      - Private Subnets: {{ private_subnet_ids }}
+      - Cluster Role ARN: {{ cluster_role_arn }}
+      - Node Role ARN: {{ nodegroup_role_arn }}
+      - Control Plane SG: {{ control_plane_sg_id }}
+      - Worker Nodes SG: {{ worker_nodes_sg_id }}
+
+- name: Validate all resources exist
+  block:
+    - name: Validate private subnets exist
+      fail:
+        msg: "No private subnets found for environment '{{ env_name }}'. Cannot deploy EKS cluster."
+      when: private_subnet_ids | length == 0
+
+    - name: Validate IAM roles exist
+      fail:
+        msg: |
+          Missing IAM roles for EKS cluster:
+          - Cluster Role: {{ cluster_role_info.iam_roles | length > 0 }}
+          - Node Group Role: {{ nodegroup_role_info.iam_roles | length > 0 }}
+      when: cluster_role_info.iam_roles | length == 0 or nodegroup_role_info.iam_roles | length == 0
+
+    - name: Validate security groups exist
+      fail:
+        msg: |
+          Missing security groups for EKS cluster:
+          - Control Plane SG: {{ control_plane_sg_info.security_groups | length > 0 }}
+          - Worker Nodes SG: {{ worker_nodes_sg_info.security_groups | length > 0 }}
+      when: control_plane_sg_info.security_groups | length == 0 or worker_nodes_sg_info.security_groups | length == 0
+
+- name: Create EKS Cluster using community.aws.eks_cluster
+  community.aws.eks_cluster:
+    name: "{{ eks_cluster_name }}"
+    version: "{{ eks_version }}"
+    role_arn: "{{ cluster_role_arn }}"
+    subnets: "{{ private_subnet_ids }}"
+    security_groups:
+      - "{{ control_plane_sg_id }}"
+    tags: "{{ eks_cluster_tags }}"
+    wait: true
+    wait_timeout: "{{ cluster_create_timeout }}"
+  register: eks_cluster
+
+- name: Create EKS Node Group using community.aws.eks_nodegroup
+  community.aws.eks_nodegroup:
+    name: "{{ nodegroup_name }}"
+    cluster_name: "{{ eks_cluster_name }}"
+    state: present
+    node_role: "{{ nodegroup_role_arn }}"
+    subnets: "{{ private_subnet_ids }}"
+    scaling_config:
+      min_size: "{{ nodegroup_min_size }}"
+      max_size: "{{ nodegroup_max_size }}"
+      desired_size: "{{ nodegroup_desired_size }}"
+    disk_size: "{{ nodegroup_disk_size }}"
+    instance_types: "{{ nodegroup_instance_types }}"
+    ami_type: "{{ nodegroup_ami_type }}"
+    capacity_type: "{{ nodegroup_capacity_type }}"
+    tags: "{{ nodegroup_tags }}"
+    wait: true
+    wait_timeout: "{{ nodegroup_create_timeout }}"

@@ -1,0 +1,61 @@
+---
+- name: Get IAM roles for cleanup
+  amazon.aws.iam_role_info:
+    role_name: "{{ item }}"
+  loop:
+    - "eks-cluster-role"
+    - "eks-nodegroup-role"
+  register: iam_roles_info
+
+- name: Show IAM roles found
+  debug:
+    msg: |
+      🔍 IAM Roles Search Results:
+      Roles Found: {{ iam_roles_info.results | selectattr('roles') | map(attribute='roles') | list | flatten | length }}
+      {% for result in iam_roles_info.results %}
+      {{ result.item }}: {% if result.roles %}{{ result.roles[0].role_name }}{% else %}NOT FOUND{% endif %}
+      {% endfor %}
+
+      {% if iam_roles_info.results | selectattr('roles') | map(attribute='roles') | list | flatten | length == 0 %}
+      ℹ️  No IAM roles found matching criteria. Nothing to clean up.
+      {% endif %}
+
+- name: Skip IAM cleanup if no roles found
+  meta: end_play
+  when: iam_roles_info.results | selectattr('roles') | map(attribute='roles') | list | flatten | length == 0
+
+- name: Detach managed policies from IAM roles
+  amazon.aws.iam_managed_policy:
+    policy_arn: "{{ item.1.arn }}"
+    iam_type: role
+    iam_name: "{{ item.0.role_name }}"
+    state: absent
+  loop: "{{ iam_roles_info.results | selectattr('roles') | map(attribute='roles') | list | flatten | product(managed_policies_list) }}"
+  loop_control:
+    label: "{{ item.0.role_name }} - {{ item.1.arn.split('/')[-1] }}"
+  vars:
+    managed_policies_list:
+      - arn: "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+      - arn: "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
+      - arn: "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+      - arn: "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+      - arn: "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+      - arn: "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+
+- name: Delete IAM roles
+  amazon.aws.iam_role:
+    name: "{{ item.role_name }}"
+    state: absent
+  loop: "{{ iam_roles_info.results | selectattr('roles') | map(attribute='roles') | list | flatten }}"
+  loop_control:
+    label: "{{ item.role_name }}"
+
+- name: Show IAM roles destruction summary
+  debug:
+    msg: |
+      ✅ Successfully destroyed IAM roles for EKS
+      👤 Deleted {{ iam_roles_info.results | selectattr('roles') | map(attribute='roles') | list | flatten | length }} IAM roles
+      📋 Roles deleted:
+      {% for role in iam_roles_info.results | selectattr('roles') | map(attribute='roles') | list | flatten %}
+        - {{ role.role_name }}
+      {% endfor %}

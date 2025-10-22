@@ -1,0 +1,13 @@
+---
+- name: Deploy AWS Infrastructure
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    env_name: "uat-edfx"
+
+  roles:
+    - role: vpc
+    - role: eks
+    - role: sg
+    - role: iam

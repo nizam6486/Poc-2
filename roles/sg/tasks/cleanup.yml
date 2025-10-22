@@ -1,0 +1,46 @@
+---
+- name: Get EKS Security Groups information
+  amazon.aws.ec2_security_group_info:
+    region: "{{ aws_region | default('us-east-1') }}"
+    filters:
+      "tag:Environment": "{{ env_name }}"
+      "tag:ManagedBy": "ansible"
+      "tag:Name": "eks-*-{{ env_name }}"
+  register: eks_sg_info
+
+- name: Show EKS Security Groups found
+  debug:
+    msg: |
+      🔍 EKS Security Groups Search Results:
+      Environment: {{ env_name }}
+      Security Groups Found: {{ eks_sg_info.security_groups | length }}
+      {% if eks_sg_info.security_groups %}
+      Security Group Names: {{ eks_sg_info.security_groups | map(attribute='group_name') | list }}
+      {% endif %}
+
+      {% if eks_sg_info.security_groups | length == 0 %}
+      ℹ️  No EKS Security Groups found matching criteria. Nothing to clean up.
+      {% endif %}
+
+- name: Skip EKS SG cleanup if none found
+  meta: end_play
+  when: eks_sg_info.security_groups | length == 0
+
+- name: Delete EKS Security Groups
+  amazon.aws.ec2_security_group:
+    state: absent
+    group_id: "{{ item.group_id }}"
+    region: "{{ aws_region | default('us-east-1') }}"
+  loop: "{{ eks_sg_info.security_groups }}"
+  loop_control:
+    label: "{{ item.group_name }}"
+
+- name: Show EKS Security Groups destruction summary
+  debug:
+    msg: |
+      ✅ Successfully destroyed EKS Security Groups for environment '{{ env_name }}'
+      🔒 Deleted {{ eks_sg_info.security_groups | length }} security groups
+      📋 Groups deleted:
+      {% for group in eks_sg_info.security_groups %}
+        - {{ group.group_name }} ({{ group.group_id }})
+      {% endfor %}
