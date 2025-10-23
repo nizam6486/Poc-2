@@ -1,0 +1,8 @@
+---
+# Apache deployment configuration
+apache_namespace: default
+apache_app_name: apache-web
+apache_replicas: 2
+apache_image: httpd:2.4
+apache_port: 80
+apache_service_type: LoadBalancer

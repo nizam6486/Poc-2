@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ apache_app_name }}
+  namespace: {{ apache_namespace }}
+  labels:
+    app: {{ apache_app_name }}
+spec:
+  replicas: {{ apache_replicas }}
+  selector:
+    matchLabels:
+      app: {{ apache_app_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ apache_app_name }}
+    spec:
+      containers:
+      - name: apache
+        image: {{ apache_image }}
+        ports:
+        - containerPort: {{ apache_port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ apache_app_name }}-service
+  namespace: {{ apache_namespace }}
+spec:
+  selector:
+    app: {{ apache_app_name }}
+  ports:
+  - port: {{ apache_port }}
+    targetPort: {{ apache_port }}
+  type: {{ apache_service_type }}

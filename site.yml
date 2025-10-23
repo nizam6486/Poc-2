@@ -11,3 +11,4 @@
     - role: iam
     - role: sg
     - role: eks
+    - role: apache
