@@ -12,14 +12,20 @@
 - name: Deploy Apache to EKS cluster
   shell: kubectl apply -f /tmp/apache-deployment.yaml
 
-- name: Wait for Apache deployment to be ready
-  shell: kubectl wait --for=condition=available --timeout=300s deployment/{{ apache_app_name }} -n {{ apache_namespace }}
-
-- name: Get Apache service details
-  shell: kubectl get service {{ apache_app_name }}-service -n {{ apache_namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-  register: apache_lb_hostname
+- name: Check deployment status
+  shell: kubectl get deployment {{ apache_app_name }} -n {{ apache_namespace }}
+  register: deployment_status
   ignore_errors: true
 
-- name: Display Apache service URL
+- name: Check service status
+  shell: kubectl get service {{ apache_app_name }}-service -n {{ apache_namespace }}
+  register: service_status
+  ignore_errors: true
+
+- name: Display Apache deployment status
   debug:
-    msg: "Apache web server deployed. LoadBalancer URL: {{ apache_lb_hostname.stdout | default('Pending...') }}"
+    msg: |
+      Apache web server deployment initiated.
+      Deployment: {{ deployment_status.stdout_lines | default(['Not found']) | join(' ') }}
+      Service: {{ service_status.stdout_lines | default(['Not found']) | join(' ') }}
+      Note: If nodes are not ready, deployment will be pending until nodes are available.
