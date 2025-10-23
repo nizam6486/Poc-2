@@ -48,10 +48,20 @@
   loop: "{{ vpc_private_subnets }}"
   register: private_subnets_result
 
-- name: Create Single NAT Gateway
+- name: Get existing Elastic IPs
+  amazon.aws.ec2_eip_info:
+    region: "{{ aws_region }}"
+  register: existing_eips
+
+- name: Find available Elastic IP
+  set_fact:
+    available_eip: "{{ existing_eips.addresses | selectattr('association_id', 'undefined') | first | default({}) }}"
+
+- name: Create Single NAT Gateway with existing EIP
   amazon.aws.ec2_vpc_nat_gateway:
     state: present
     subnet_id: "{{ public_subnets_result.results[0].subnet.id }}"
+    allocation_id: "{{ available_eip.allocation_id }}"
     wait: true
     wait_timeout: 600
     region: "{{ aws_region }}"
@@ -60,7 +70,7 @@
       Environment: "{{ env_name }}"
       ManagedBy: "ansible"
   register: nat_gateway
-  when: create_nat_gateway | default(true) | bool
+  when: create_nat_gateway | default(true) | bool and available_eip
 
 - name: Create Route Table for Private Subnets WITH NAT Route
   amazon.aws.ec2_vpc_route_table:
