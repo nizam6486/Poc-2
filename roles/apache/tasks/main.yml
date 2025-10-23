@@ -22,10 +22,21 @@
   register: service_status
   ignore_errors: true
 
-- name: Display Apache deployment status
+- name: Get LoadBalancer external IP
+  shell: kubectl get service {{ apache_app_name }}-service -n {{ apache_namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  register: lb_hostname
+  ignore_errors: true
+
+- name: Display Apache access information
   debug:
     msg: |
-      Apache web server deployment initiated.
+      Apache web server deployment status:
       Deployment: {{ deployment_status.stdout_lines | default(['Not found']) | join(' ') }}
       Service: {{ service_status.stdout_lines | default(['Not found']) | join(' ') }}
-      Note: If nodes are not ready, deployment will be pending until nodes are available.
+      
+      ACCESS INFORMATION:
+      - Cluster IP (internal only): 172.20.40.139:80
+      - LoadBalancer URL: {{ lb_hostname.stdout | default('Still pending - wait for nodes to be ready') }}
+      - NodePort: Use any worker node IP with port 30159
+      
+      Note: Wait for EXTERNAL-IP to show actual hostname, then use that URL to access Apache.
