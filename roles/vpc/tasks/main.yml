@@ -48,49 +48,23 @@
   loop: "{{ vpc_private_subnets }}"
   register: private_subnets_result
 
-- name: Get existing Elastic IPs
-  amazon.aws.ec2_eip_info:
-    region: "{{ aws_region }}"
-  register: existing_eips
-
-- name: Find available Elastic IP
-  set_fact:
-    available_eip: "{{ existing_eips.addresses | selectattr('association_id', 'undefined') | first | default({}) }}"
-
-- name: Create Single NAT Gateway with existing EIP
-  amazon.aws.ec2_vpc_nat_gateway:
-    state: present
-    subnet_id: "{{ public_subnets_result.results[0].subnet.id }}"
-    allocation_id: "{{ available_eip.allocation_id }}"
-    wait: true
-    wait_timeout: 600
-    region: "{{ aws_region }}"
-    tags:
-      Name: "nat-{{ env_name }}"
-      Environment: "{{ env_name }}"
-      ManagedBy: "ansible"
-  register: nat_gateway
-  when: create_nat_gateway | default(true) | bool and available_eip
-
-- name: Create Route Table for Private Subnets WITH NAT Route
+- name: Create Route Table for Public Subnets
   amazon.aws.ec2_vpc_route_table:
     vpc_id: "{{ vpc_result.vpc.id }}"
     region: "{{ aws_region }}"
     routes:
       - dest: "0.0.0.0/0"
-        gateway_id: "{{ nat_gateway.nat_gateway_id }}"
+        gateway_id: "{{ igw_result.gateway_id }}"
     tags:
-      Name: "rt-{{ env_name }}-private"
+      Name: "rt-{{ env_name }}-public"
       Environment: "{{ env_name }}"
-      Type: "private"
-  register: private_route_table
-  when: create_nat_gateway | default(true) | bool and nat_gateway is defined
+      Type: "public"
+  register: public_route_table
 
-- name: Associate Private Subnets with Private Route Table
+- name: Associate Public Subnets with Public Route Table
   amazon.aws.ec2_vpc_route_table:
     vpc_id: "{{ vpc_result.vpc.id }}"
-    route_table_id: "{{ private_route_table.route_table.id }}"
-    subnets: "{{ private_subnets_result.results | map(attribute='subnet.id') | list }}"
+    route_table_id: "{{ public_route_table.route_table.id }}"
+    subnets: "{{ public_subnets_result.results | map(attribute='subnet.id') | list }}"
     state: present
     region: "{{ aws_region }}"
-  when: create_nat_gateway | default(true) | bool and private_route_table is defined
