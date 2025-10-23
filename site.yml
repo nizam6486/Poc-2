@@ -8,6 +8,6 @@
 
   roles:
     - role: vpc
-    - role: eks
-    - role: sg
     - role: iam
+    - role: sg
+    - role: eks
