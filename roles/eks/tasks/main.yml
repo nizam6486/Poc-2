@@ -84,6 +84,13 @@
           - Worker Nodes SG: {{ worker_nodes_sg_info.security_groups | length > 0 }}
       when: control_plane_sg_info.security_groups | length == 0 or worker_nodes_sg_info.security_groups | length == 0
 
+- name: Check if EKS cluster already exists
+  community.aws.eks_cluster:
+    name: "{{ eks_cluster_name }}"
+    state: present
+  register: existing_cluster
+  ignore_errors: true
+
 - name: Create EKS Cluster using community.aws.eks_cluster
   community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
@@ -96,6 +103,7 @@
     wait: true
     wait_timeout: "{{ cluster_create_timeout }}"
   register: eks_cluster
+  when: existing_cluster is failed
 
 - name: Create EKS Node Group using community.aws.eks_nodegroup
   community.aws.eks_nodegroup:
