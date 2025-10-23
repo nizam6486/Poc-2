@@ -113,5 +113,4 @@
     ami_type: "{{ nodegroup_ami_type }}"
     capacity_type: "{{ nodegroup_capacity_type }}"
     tags: "{{ nodegroup_tags }}"
-    wait: true
-    wait_timeout: "{{ nodegroup_create_timeout }}"
+    wait: false
