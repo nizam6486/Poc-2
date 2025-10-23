@@ -10,23 +10,16 @@
     dest: /tmp/apache-deployment.yaml
 
 - name: Deploy Apache to EKS cluster
-  kubernetes.core.k8s:
-    state: present
-    src: /tmp/apache-deployment.yaml
-    wait: true
-    wait_condition:
-      type: Available
-      status: "True"
-    wait_timeout: 300
+  shell: kubectl apply -f /tmp/apache-deployment.yaml
+
+- name: Wait for Apache deployment to be ready
+  shell: kubectl wait --for=condition=available --timeout=300s deployment/{{ apache_app_name }} -n {{ apache_namespace }}
 
 - name: Get Apache service details
-  kubernetes.core.k8s_info:
-    api_version: v1
-    kind: Service
-    name: "{{ apache_app_name }}-service"
-    namespace: "{{ apache_namespace }}"
-  register: apache_service
+  shell: kubectl get service {{ apache_app_name }}-service -n {{ apache_namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  register: apache_lb_hostname
+  ignore_errors: true
 
 - name: Display Apache service URL
   debug:
-    msg: "Apache web server deployed. LoadBalancer URL: {{ apache_service.resources[0].status.loadBalancer.ingress[0].hostname | default('Pending...') }}"
+    msg: "Apache web server deployed. LoadBalancer URL: {{ apache_lb_hostname.stdout | default('Pending...') }}"
