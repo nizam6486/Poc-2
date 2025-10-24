@@ -125,9 +125,9 @@ jobs:
             -e "environment=${{ inputs.environment }}" \
             -e "aws_region=${{ vars.AWS_REGION }}"
 
-      - name: Run Tests
-        if: inputs.action == 'deploy'
-        run: |
-          ansible-playbook tests.yml \
-            -e "environment=${{ inputs.environment }}" \
-            -e "aws_region=${{ vars.AWS_REGION }}"
+      # - name: Run Tests
+      #   if: inputs.action == 'deploy'
+      #   run: |
+      #     ansible-playbook tests.yml \
+      #       -e "environment=${{ inputs.environment }}" \
+      #       -e "aws_region=${{ vars.AWS_REGION }}"

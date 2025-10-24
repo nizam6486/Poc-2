@@ -18,6 +18,9 @@
     tags:
       Environment: "{{ env_name }}"
   register: eks_nodegroup_role
+
+- name: Create instance profile for node group
+  include_tasks: instance-profile.yml
 # - name: Create ECR Access Policy
 #   amazon.aws.iam_policy:
 #     policy_name: "eks-ecr-access-policy"

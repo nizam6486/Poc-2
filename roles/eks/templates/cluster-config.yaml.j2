@@ -25,7 +25,7 @@ nodeGroups:
     maxSize: {{ nodegroup_max_size }}
     volumeSize: {{ nodegroup_disk_size }}
     iam:
-      instanceRoleARN: {{ nodegroup_role_arn }}
+      instanceRoleName: eks-nodegroup-role
     subnets: {{ public_subnet_ids }}
     tags:
       Environment: {{ env_name }}
