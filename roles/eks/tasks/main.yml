@@ -92,13 +92,17 @@
 - name: Check if EKS cluster exists
   shell: eksctl get cluster --name {{ eks_cluster_name }} --region {{ aws_region }}
   register: cluster_exists
-  ignore_errors: true
+  failed_when: false
+  changed_when: false
 
 - name: Create EKS cluster with eksctl
   shell: eksctl create cluster -f /tmp/cluster-config.yaml
   when: cluster_exists.rc != 0
+  register: cluster_creation
+  async: 1800
+  poll: 30
 
-- name: Create nodegroup only if cluster exists
-  shell: eksctl create nodegroup -f /tmp/cluster-config.yaml
-  when: cluster_exists.rc == 0
-  ignore_errors: true
+- name: Display cluster creation status
+  debug:
+    msg: "EKS cluster creation completed successfully"
+  when: cluster_exists.rc != 0 and cluster_creation is succeeded
