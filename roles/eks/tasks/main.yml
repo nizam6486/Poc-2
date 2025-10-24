@@ -90,13 +90,13 @@
     dest: /tmp/cluster-config.yaml
 
 - name: Check if EKS cluster exists
-  shell: eksctl get cluster --name {{ eks_cluster_name }} --region {{ aws_region }}
+  shell: aws eks describe-cluster --name {{ eks_cluster_name }} --region {{ aws_region }}
   register: cluster_exists
   failed_when: false
   changed_when: false
 
 - name: Check if nodegroups exist
-  shell: eksctl get nodegroup --cluster {{ eks_cluster_name }} --region {{ aws_region }}
+  shell: aws eks list-nodegroups --cluster-name {{ eks_cluster_name }} --region {{ aws_region }}
   register: nodegroup_exists
   failed_when: false
   changed_when: false
@@ -109,8 +109,17 @@
   poll: 60
 
 - name: Create nodegroup only
-  shell: eksctl create nodegroup -f /tmp/cluster-config.yaml
-  when: cluster_exists.rc == 0 and nodegroup_exists.rc != 0
+  shell: |
+    eksctl create nodegroup \
+      --cluster {{ eks_cluster_name }} \
+      --region {{ aws_region }} \
+      --name {{ nodegroup_name }} \
+      --node-type {{ nodegroup_instance_types[0] }} \
+      --nodes {{ nodegroup_desired_size }} \
+      --nodes-min {{ nodegroup_min_size }} \
+      --nodes-max {{ nodegroup_max_size }} \
+      --managed
+  when: cluster_exists.rc == 0 and (nodegroup_exists.rc != 0 or '"nodegroups": []' in nodegroup_exists.stdout)
   register: nodegroup_creation
   async: 1800
   poll: 60
