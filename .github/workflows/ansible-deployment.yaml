@@ -98,6 +98,16 @@ jobs:
           pip install ansible boto3 botocore
           ansible-galaxy collection install amazon.aws
           ansible-galaxy collection install community.aws
+          
+          # Install eksctl
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+          eksctl version
+          
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          kubectl version --client
 
       - name: Deploy Infrastructure
         if: inputs.action == 'deploy'

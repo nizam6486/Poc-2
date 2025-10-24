@@ -84,30 +84,21 @@
           - Worker Nodes SG: {{ worker_nodes_sg_info.security_groups | length > 0 }}
       when: control_plane_sg_info.security_groups | length == 0 or worker_nodes_sg_info.security_groups | length == 0
 
-- name: Skip EKS cluster creation - using existing cluster
-  debug:
-    msg: "Using existing EKS cluster: {{ eks_cluster_name }}"
+- name: Generate eksctl cluster config
+  template:
+    src: cluster-config.yaml.j2
+    dest: /tmp/cluster-config.yaml
 
-- name: Check if node group exists
-  shell: aws eks describe-nodegroup --cluster-name {{ eks_cluster_name }} --nodegroup-name {{ nodegroup_name }} --region {{ aws_region }}
-  register: nodegroup_check
+- name: Check if EKS cluster exists
+  shell: eksctl get cluster --name {{ eks_cluster_name }} --region {{ aws_region }}
+  register: cluster_exists
   ignore_errors: true
 
-- name: Create EKS Node Group
-  community.aws.eks_nodegroup:
-    name: "{{ nodegroup_name }}"
-    cluster_name: "{{ eks_cluster_name }}"
-    state: present
-    node_role: "{{ nodegroup_role_arn }}"
-    subnets: "{{ public_subnet_ids }}"
-    scaling_config:
-      min_size: "{{ nodegroup_min_size }}"
-      max_size: "{{ nodegroup_max_size }}"
-      desired_size: "{{ nodegroup_desired_size }}"
-    disk_size: "{{ nodegroup_disk_size }}"
-    instance_types: "{{ nodegroup_instance_types }}"
-    ami_type: "{{ nodegroup_ami_type }}"
-    capacity_type: "{{ nodegroup_capacity_type }}"
-    tags: "{{ nodegroup_tags }}"
-    wait: false
-  when: nodegroup_check.rc != 0
+- name: Create EKS cluster with eksctl
+  shell: eksctl create cluster -f /tmp/cluster-config.yaml
+  when: cluster_exists.rc != 0
+
+- name: Create nodegroup only if cluster exists
+  shell: eksctl create nodegroup -f /tmp/cluster-config.yaml
+  when: cluster_exists.rc == 0
+  ignore_errors: true
