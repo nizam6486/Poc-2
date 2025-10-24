@@ -1,9 +1,21 @@
 ---
+- name: Gather existing VPC information
+  amazon.aws.ec2_vpc_net_info:
+    region: "{{ aws_region }}"
+    filters:
+      "tag:Environment": "{{ env_name }}"
+      "tag:ManagedBy": "ansible"
+  register: vpc_info
+
+- name: Set VPC ID fact
+  set_fact:
+    vpc_id: "{{ vpc_info.vpcs[0].id }}"
+
 - name: Create EKS Control Plane Security Group
   amazon.aws.ec2_security_group:
     name: "eks-controlplane-{{ env_name }}"
     description: "EKS Control Plane Security Group"
-    vpc_id: "{{ vpc_result.vpc.id }}"
+    vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
     rules:
       - proto: tcp
@@ -20,15 +32,19 @@
   amazon.aws.ec2_security_group:
     name: "eks-workernodes-{{ env_name }}"
     description: "EKS Worker Nodes Security Group"
-    vpc_id: "{{ vpc_result.vpc.id }}"
+    vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
     rules:
+      - proto: tcp
+        ports:
+          - 80
+          - 443
+          - 30000-32767
+        cidr_ip: "0.0.0.0/0"
+        rule_desc: "HTTP, HTTPS and NodePort access"
       - proto: all
-        group_name: "eks-controlplane-{{ env_name }}"
+        group_id: "{{ eks_controlplane_sg.group_id }}"
         rule_desc: "Allow all from control plane"
-      - proto: all
-        group_name: "eks-workernodes-{{ env_name }}"
-        rule_desc: "Allow all between worker nodes"
     tags:
       Environment: "{{ env_name }}"
       Name: "eks-workernodes-{{ env_name }}"

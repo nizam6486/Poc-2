@@ -20,6 +20,13 @@ spec:
         image: {{ apache_image }}
         ports:
         - containerPort: {{ apache_port }}
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
 ---
 apiVersion: v1
 kind: Service
@@ -32,4 +39,18 @@ spec:
   ports:
   - port: {{ apache_port }}
     targetPort: {{ apache_port }}
+    nodePort: {{ apache_nodeport }}
   type: {{ apache_service_type }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ apache_app_name }}-loadbalancer
+  namespace: {{ apache_namespace }}
+spec:
+  selector:
+    app: {{ apache_app_name }}
+  ports:
+  - port: 80
+    targetPort: {{ apache_port }}
+  type: LoadBalancer

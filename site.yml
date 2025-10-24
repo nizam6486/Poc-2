@@ -4,7 +4,8 @@
   gather_facts: false
 
   vars:
-    env_name: "uat-edfx"
+    env_name: "{{ environment | default('uat-edfx') }}"
+    aws_region: "{{ aws_region | default('us-east-1') }}"
 
   roles:
     - role: vpc

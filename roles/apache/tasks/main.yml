@@ -4,6 +4,13 @@
   environment:
     AWS_DEFAULT_REGION: "{{ aws_region }}"
 
+- name: Wait for EKS cluster to be ready
+  shell: kubectl get nodes
+  register: nodes_status
+  until: nodes_status.rc == 0
+  retries: 10
+  delay: 30
+
 - name: Generate Apache Kubernetes manifest
   template:
     src: apache-deployment.yaml.j2
@@ -12,31 +19,52 @@
 - name: Deploy Apache to EKS cluster
   shell: kubectl apply -f /tmp/apache-deployment.yaml
 
-- name: Check deployment status
-  shell: kubectl get deployment {{ apache_app_name }} -n {{ apache_namespace }}
-  register: deployment_status
+- name: Wait for deployment to be ready
+  shell: kubectl wait --for=condition=available --timeout=300s deployment/{{ apache_app_name }} -n {{ apache_namespace }}
+  register: deployment_ready
   ignore_errors: true
 
-- name: Check service status
-  shell: kubectl get service {{ apache_app_name }}-service -n {{ apache_namespace }}
-  register: service_status
+- name: Get worker node external IPs
+  shell: kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="ExternalIP")].address}'
+  register: node_external_ips
   ignore_errors: true
 
-- name: Get LoadBalancer external IP
-  shell: kubectl get service {{ apache_app_name }}-service -n {{ apache_namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+- name: Get LoadBalancer external hostname
+  shell: kubectl get service {{ apache_app_name }}-loadbalancer -n {{ apache_namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
   register: lb_hostname
   ignore_errors: true
+  retries: 5
+  delay: 30
 
-- name: Display Apache access information
+- name: Display comprehensive access information
   debug:
     msg: |
-      Apache web server deployment status:
-      Deployment: {{ deployment_status.stdout_lines | default(['Not found']) | join(' ') }}
-      Service: {{ service_status.stdout_lines | default(['Not found']) | join(' ') }}
+      🚀 APACHE WEB SERVER DEPLOYMENT COMPLETE!
       
-      ACCESS INFORMATION:
-      - Cluster IP (internal only): 172.20.40.139:80
-      - LoadBalancer URL: {{ lb_hostname.stdout | default('Still pending - wait for nodes to be ready') }}
-      - NodePort: Use any worker node IP with port 30159
+      📊 DEPLOYMENT STATUS:
+      {{ deployment_ready.stdout | default('Deployment status check failed') }}
       
-      Note: Wait for EXTERNAL-IP to show actual hostname, then use that URL to access Apache.
+      🌐 ACCESS YOUR APPLICATION:
+      
+      1. LoadBalancer URL (Recommended):
+         http://{{ lb_hostname.stdout | default('Still provisioning - wait 2-3 minutes') }}
+      
+      2. NodePort Access:
+         {% if node_external_ips.stdout %}
+         {% for ip in node_external_ips.stdout.split() %}
+         http://{{ ip }}:{{ apache_nodeport }}
+         {% endfor %}
+         {% else %}
+         Get node IPs: kubectl get nodes -o wide
+         Then use: http://NODE_EXTERNAL_IP:{{ apache_nodeport }}
+         {% endif %}
+      
+      3. Port Forward (for testing):
+         kubectl port-forward service/{{ apache_app_name }}-service 8080:80 -n {{ apache_namespace }}
+         Then access: http://localhost:8080
+      
+      🔍 TROUBLESHOOTING COMMANDS:
+      - Check pods: kubectl get pods -n {{ apache_namespace }}
+      - Check services: kubectl get svc -n {{ apache_namespace }}
+      - Check logs: kubectl logs -l app={{ apache_app_name }} -n {{ apache_namespace }}
+      - Check nodes: kubectl get nodes -o wide

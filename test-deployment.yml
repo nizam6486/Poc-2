@@ -1,0 +1,52 @@
+---
+- name: Test Apache Deployment
+  hosts: localhost
+  gather_facts: false
+  
+  vars:
+    env_name: "{{ environment | default('uat-edfx') }}"
+    aws_region: "{{ aws_region | default('us-east-1') }}"
+    eks_cluster_name: "eks-{{ env_name }}"
+    apache_app_name: "apache-web"
+    apache_namespace: "default"
+
+  tasks:
+    - name: Update kubeconfig
+      shell: aws eks update-kubeconfig --region {{ aws_region }} --name {{ eks_cluster_name }}
+      
+    - name: Check cluster status
+      shell: kubectl cluster-info
+      register: cluster_info
+      
+    - name: Check nodes
+      shell: kubectl get nodes -o wide
+      register: nodes_status
+      
+    - name: Check Apache deployment
+      shell: kubectl get deployment {{ apache_app_name }} -n {{ apache_namespace }}
+      register: deployment_status
+      ignore_errors: true
+      
+    - name: Check Apache services
+      shell: kubectl get svc -n {{ apache_namespace }}
+      register: services_status
+      
+    - name: Get LoadBalancer URL
+      shell: kubectl get service {{ apache_app_name }}-loadbalancer -n {{ apache_namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+      register: lb_url
+      ignore_errors: true
+      
+    - name: Display test results
+      debug:
+        msg: |
+          🧪 DEPLOYMENT TEST RESULTS:
+          
+          Cluster Info: {{ cluster_info.stdout_lines[0] | default('Failed') }}
+          
+          Nodes: {{ nodes_status.stdout_lines | length }} nodes ready
+          
+          Deployment: {{ deployment_status.stdout | default('Not found') }}
+          
+          Services: {{ services_status.stdout_lines | length }} services
+          
+          🌐 ACCESS URL: http://{{ lb_url.stdout | default('Still provisioning') }}

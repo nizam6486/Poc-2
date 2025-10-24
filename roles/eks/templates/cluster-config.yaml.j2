@@ -4,6 +4,7 @@ kind: ClusterConfig
 metadata:
   name: {{ eks_cluster_name }}
   region: {{ aws_region }}
+  version: "{{ eks_version }}"
 
 vpc:
   id: {{ vpc_id }}
@@ -24,9 +25,17 @@ nodeGroups:
     minSize: {{ nodegroup_min_size }}
     maxSize: {{ nodegroup_max_size }}
     volumeSize: {{ nodegroup_disk_size }}
+    amiFamily: AmazonLinux2
     iam:
-      instanceRoleName: eks-nodegroup-role
+      instanceRoleARN: {{ nodegroup_role_arn }}
+    ssh:
+      allow: true
+    securityGroups:
+      attachIDs:
+        - {{ worker_nodes_sg_id }}
     subnets: {{ public_subnet_ids }}
     tags:
       Environment: {{ env_name }}
       ManagedBy: ansible
+      k8s.io/cluster-autoscaler/enabled: "true"
+      k8s.io/cluster-autoscaler/{{ eks_cluster_name }}: "owned"
