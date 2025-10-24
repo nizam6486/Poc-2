@@ -33,8 +33,12 @@
     nodegroup_role_arn: "{{ nodegroup_role_info.iam_roles[0].arn }}"
 
 - name: Generate unique cluster name
+  shell: echo "eks-{{ env_name }}-$(date +%s)"
+  register: cluster_name_result
+
+- name: Set unique cluster name
   set_fact:
-    unique_cluster_name: "eks-{{ env_name }}-{{ ansible_date_time.epoch }}"
+    unique_cluster_name: "{{ cluster_name_result.stdout }}"
 
 - name: Create EKS cluster using AWS CLI
   shell: |
