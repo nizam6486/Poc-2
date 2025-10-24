@@ -99,10 +99,48 @@
   shell: eksctl create cluster -f /tmp/cluster-config.yaml
   when: cluster_exists.rc != 0
   register: cluster_creation
-  async: 1800
-  poll: 30
+  async: 2400
+  poll: 60
 
-- name: Display cluster creation status
-  debug:
-    msg: "EKS cluster creation completed successfully"
-  when: cluster_exists.rc != 0 and cluster_creation is succeeded
+- name: Wait for cluster creation to complete
+  async_status:
+    jid: "{{ cluster_creation.ansible_job_id }}"
+  register: cluster_job_result
+  until: cluster_job_result.finished
+  retries: 40
+  delay: 60
+  when: cluster_exists.rc != 0
+
+- name: Get current AWS identity
+  shell: aws sts get-caller-identity --query Arn --output text
+  register: current_identity
+  when: cluster_exists.rc != 0
+
+- name: Create EKS access entry for deployment role
+  shell: |
+    aws eks create-access-entry \
+      --cluster-name {{ eks_cluster_name }} \
+      --principal-arn {{ current_identity.stdout }} \
+      --type STANDARD \
+      --region {{ aws_region }}
+  ignore_errors: true
+  when: cluster_exists.rc != 0
+
+- name: Associate admin policy to access entry
+  shell: |
+    aws eks associate-access-policy \
+      --cluster-name {{ eks_cluster_name }} \
+      --principal-arn {{ current_identity.stdout }} \
+      --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
+      --access-scope type=cluster \
+      --region {{ aws_region }}
+  ignore_errors: true
+  when: cluster_exists.rc != 0
+
+- name: Verify cluster is accessible
+  shell: kubectl get svc
+  register: cluster_access
+  retries: 10
+  delay: 30
+  until: cluster_access.rc == 0
+  when: cluster_exists.rc != 0

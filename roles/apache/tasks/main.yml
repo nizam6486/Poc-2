@@ -4,20 +4,41 @@
   environment:
     AWS_DEFAULT_REGION: "{{ aws_region }}"
 
-- name: Wait for EKS cluster to be ready
-  shell: kubectl get nodes --no-headers | grep Ready
-  register: nodes_status
-  until: nodes_status.rc == 0 and nodes_status.stdout_lines | length >= 1
+- name: Wait for EKS nodes to be available
+  shell: kubectl get nodes --no-headers
+  register: nodes_check
+  until: nodes_check.rc == 0 and nodes_check.stdout_lines | length >= 1
+  retries: 30
+  delay: 30
+  ignore_errors: true
+
+- name: Wait for nodes to be Ready
+  shell: kubectl get nodes --no-headers | grep -c Ready
+  register: ready_nodes
+  until: ready_nodes.stdout | int >= 1
   retries: 20
   delay: 30
+  when: nodes_check.rc == 0
+
+- name: Check if nodes exist before deployment
+  shell: kubectl get nodes
+  register: final_node_check
+  failed_when: false
+
+- name: Skip Apache deployment if no nodes
+  debug:
+    msg: "Skipping Apache deployment - no nodes available yet. Cluster may still be initializing."
+  when: final_node_check.rc != 0 or final_node_check.stdout_lines | length == 0
 
 - name: Generate Apache Kubernetes manifest
   template:
     src: apache-deployment.yaml.j2
     dest: /tmp/apache-deployment.yaml
+  when: final_node_check.rc == 0 and final_node_check.stdout_lines | length > 0
 
 - name: Deploy Apache to EKS cluster
   shell: kubectl apply -f /tmp/apache-deployment.yaml
+  when: final_node_check.rc == 0 and final_node_check.stdout_lines | length > 0
 
 - name: Wait for deployment to be available
   shell: kubectl wait --for=condition=available deployment/{{ apache_app_name }} -n {{ apache_namespace }} --timeout=300s

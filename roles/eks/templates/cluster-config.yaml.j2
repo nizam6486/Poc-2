@@ -18,6 +18,10 @@ vpc:
 iam:
   serviceRoleARN: {{ cluster_role_arn }}
 
+accessConfig:
+  bootstrapClusterCreatorAdminPermissions: true
+  authenticationMode: API_AND_CONFIG_MAP
+
 nodeGroups:
   - name: {{ nodegroup_name }}
     instanceType: {{ nodegroup_instance_types[0] }}
