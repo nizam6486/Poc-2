@@ -6,6 +6,7 @@
       - "eks-nodegroup-role"
     state: present
   register: instance_profile_result
+  ignore_errors: true
 
 - name: Debug instance profile creation
   debug:

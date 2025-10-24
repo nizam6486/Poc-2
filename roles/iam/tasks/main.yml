@@ -6,7 +6,8 @@
     assume_role_policy_document: "{{ eks_cluster_trust_policy | to_json }}"
     managed_policies: "{{ eks_cluster_managed_policies }}"
     tags:
-      Environment: "{{ env_name }}"
+      Environment: "{{ env_name | regex_replace('-', '_') }}"
+      ManagedBy: "ansible"
   register: eks_cluster_role
 
 - name: Create EKS Node Group Role
@@ -16,7 +17,8 @@
     assume_role_policy_document: "{{ eks_nodegroup_trust_policy | to_json }}"
     managed_policies: "{{ eks_nodegroup_managed_policies }}"
     tags:
-      Environment: "{{ env_name }}"
+      Environment: "{{ env_name | regex_replace('-', '_') }}"
+      ManagedBy: "ansible"
   register: eks_nodegroup_role
 
 - name: Create instance profile for node group
