@@ -62,7 +62,10 @@ jobs:
 
       - name: Syntax Check Playbooks
         run: |
-          find . -name "*.yml" -not -path "./.github/*" | xargs -I {} ansible-playbook --syntax-check {} || true
+          for file in $(find . -name "*.yml" -not -path "./.github/*"); do
+            echo "Checking syntax for: $file"
+            ansible-playbook --syntax-check "$file" || echo "Syntax check failed for $file"
+          done
 
   deploy:
     name: Deploy to ${{ inputs.environment }}
@@ -78,7 +81,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-2' }}
           role-session-name: GitHubActions-Ansible
 
       - name: Set up Python
@@ -95,35 +98,76 @@ jobs:
 
       - name: Install dependencies
         run: |
+          set -e
+          echo "Installing Python dependencies..."
           pip install ansible boto3 botocore
-          ansible-galaxy collection install amazon.aws
-          ansible-galaxy collection install community.aws
           
-          # Install eksctl
+          echo "Installing Ansible collections..."
+          ansible-galaxy collection install amazon.aws --force
+          ansible-galaxy collection install community.aws --force
+          
+          echo "Installing eksctl..."
           curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin
           eksctl version
           
-          # Install kubectl
+          echo "Installing kubectl..."
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
           kubectl version --client
+          
+          echo "All dependencies installed successfully"
 
       - name: Deploy Infrastructure
         if: inputs.action == 'deploy'
         run: |
+          set -e
+          echo "Starting deployment with environment: ${{ inputs.environment }}"
           ansible-playbook site.yml \
-            -e "environment=${{ inputs.environment }}" \
-            -e "aws_region=${{ vars.AWS_REGION }}" \
+            -e "env_name=${{ inputs.environment }}" \
+            -e "aws_region=${{ vars.AWS_REGION || 'us-east-2' }}" \
             -e "git_commit=${{ github.sha }}" \
-            -e "git_branch=main"
+            -e "git_branch=main" \
+            -v
+
+      - name: Get Application Access URLs
+        if: inputs.action == 'deploy'
+        run: |
+          set -e
+          echo "Updating kubeconfig..."
+          aws eks update-kubeconfig --region ${{ vars.AWS_REGION || 'us-east-2' }} --name eks-${{ inputs.environment }}
+          
+          echo "Waiting for services to be ready..."
+          sleep 30
+          
+          echo "Getting LoadBalancer URL..."
+          LB_URL=$(kubectl get service apache-web-loadbalancer -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Still provisioning")
+          
+          echo "Getting NodePort access..."
+          NODE_IPS=$(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="ExternalIP")].address}' 2>/dev/null || echo "No external IPs")
+          
+          echo "🌐 APPLICATION ACCESS INFORMATION:"
+          echo "================================="
+          echo "LoadBalancer URL: http://$LB_URL"
+          echo "NodePort Access: Use any node IP with port 30080"
+          if [ "$NODE_IPS" != "No external IPs" ]; then
+            for ip in $NODE_IPS; do
+              echo "  - http://$ip:30080"
+            done
+          fi
+          echo "Port Forward: kubectl port-forward service/apache-web-service 8080:80"
+          echo "Then access: http://localhost:8080"
+          echo "="================================
 
       - name: Destroy Infrastructure
         if: inputs.action == 'destroy'
         run: |
+          set -e
+          echo "Starting cleanup for environment: ${{ inputs.environment }}"
           ansible-playbook cleanup.yml \
-            -e "environment=${{ inputs.environment }}" \
-            -e "aws_region=${{ vars.AWS_REGION }}"
+            -e "env_name=${{ inputs.environment }}" \
+            -e "aws_region=${{ vars.AWS_REGION || 'us-east-2' }}" \
+            -v
 
       # - name: Run Tests
       #   if: inputs.action == 'deploy'
