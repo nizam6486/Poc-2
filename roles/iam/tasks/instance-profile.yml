@@ -2,7 +2,6 @@
 - name: Create instance profile for EKS node group
   amazon.aws.iam_instance_profile:
     name: "eks-nodegroup-role"
-    roles:
-      - "eks-nodegroup-role"
+    role: "eks-nodegroup-role"
     state: present
   register: instance_profile
