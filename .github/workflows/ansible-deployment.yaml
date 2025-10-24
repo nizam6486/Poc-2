@@ -138,26 +138,54 @@ jobs:
           aws eks update-kubeconfig --region ${{ vars.AWS_REGION || 'us-east-2' }} --name eks-${{ inputs.environment }}
           
           echo "Waiting for services to be ready..."
-          sleep 30
+          sleep 60
+          
+          echo "Final deployment status:"
+          kubectl get pods -n default -o wide
+          kubectl get svc -n default
           
           echo "Getting LoadBalancer URL..."
-          LB_URL=$(kubectl get service apache-web-loadbalancer -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Still provisioning")
+          for i in {1..10}; do
+            LB_URL=$(kubectl get service apache-web-loadbalancer -n default -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+            if [ -n "$LB_URL" ]; then
+              break
+            fi
+            echo "Waiting for LoadBalancer... attempt $i/10"
+            sleep 30
+          done
           
           echo "Getting NodePort access..."
-          NODE_IPS=$(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="ExternalIP")].address}' 2>/dev/null || echo "No external IPs")
+          NODE_IPS=$(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="ExternalIP")].address}' 2>/dev/null || echo "")
+          INTERNAL_IPS=$(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "")
           
-          echo "🌐 APPLICATION ACCESS INFORMATION:"
-          echo "================================="
-          echo "LoadBalancer URL: http://$LB_URL"
-          echo "NodePort Access: Use any node IP with port 30080"
-          if [ "$NODE_IPS" != "No external IPs" ]; then
+          echo ""
+          echo "🎆 SUCCESS! APPLICATION IS DEPLOYED AND ACCESSIBLE!"
+          echo "================================================"
+          
+          if [ -n "$LB_URL" ]; then
+            echo "🌐 PRIMARY ACCESS: http://$LB_URL"
+            echo "Test: curl -I http://$LB_URL"
+          else
+            echo "⏳ LoadBalancer still provisioning..."
+          fi
+          
+          echo ""
+          echo "📍 NODEPORT ACCESS (Port 30080):"
+          if [ -n "$NODE_IPS" ]; then
             for ip in $NODE_IPS; do
-              echo "  - http://$ip:30080"
+              echo "🔗 http://$ip:30080"
+            done
+          elif [ -n "$INTERNAL_IPS" ]; then
+            for ip in $INTERNAL_IPS; do
+              echo "🔗 http://$ip:30080 (internal)"
             done
           fi
-          echo "Port Forward: kubectl port-forward service/apache-web-service 8080:80"
-          echo "Then access: http://localhost:8080"
-          echo "="================================
+          
+          echo ""
+          echo "🔧 LOCAL TESTING:"
+          echo "kubectl port-forward service/apache-web-service 8080:80 -n default &"
+          echo "curl http://localhost:8080"
+          echo "================================================"
 
       - name: Destroy Infrastructure
         if: inputs.action == 'destroy'

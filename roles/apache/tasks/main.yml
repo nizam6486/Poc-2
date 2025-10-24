@@ -5,10 +5,10 @@
     AWS_DEFAULT_REGION: "{{ aws_region }}"
 
 - name: Wait for EKS cluster to be ready
-  shell: kubectl get nodes
+  shell: kubectl get nodes --no-headers | grep Ready
   register: nodes_status
-  until: nodes_status.rc == 0
-  retries: 10
+  until: nodes_status.rc == 0 and nodes_status.stdout_lines | length >= 1
+  retries: 20
   delay: 30
 
 - name: Generate Apache Kubernetes manifest
@@ -19,10 +19,23 @@
 - name: Deploy Apache to EKS cluster
   shell: kubectl apply -f /tmp/apache-deployment.yaml
 
-- name: Wait for deployment to be ready
-  shell: kubectl wait --for=condition=available --timeout=300s deployment/{{ apache_app_name }} -n {{ apache_namespace }}
+- name: Wait for deployment to be available
+  shell: kubectl wait --for=condition=available deployment/{{ apache_app_name }} -n {{ apache_namespace }} --timeout=300s
   register: deployment_ready
   ignore_errors: true
+
+- name: Check pod status if deployment failed
+  shell: kubectl describe pods -l app={{ apache_app_name }} -n {{ apache_namespace }}
+  register: pod_describe
+  when: deployment_ready.rc != 0
+
+- name: Force restart if deployment not ready
+  shell: kubectl rollout restart deployment/{{ apache_app_name }} -n {{ apache_namespace }}
+  when: deployment_ready.rc != 0
+
+- name: Wait for restarted deployment
+  shell: kubectl wait --for=condition=available deployment/{{ apache_app_name }} -n {{ apache_namespace }} --timeout=180s
+  when: deployment_ready.rc != 0
 
 - name: Get worker node external IPs
   shell: kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="ExternalIP")].address}'
