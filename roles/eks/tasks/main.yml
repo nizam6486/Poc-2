@@ -40,6 +40,18 @@
   set_fact:
     unique_cluster_name: "{{ cluster_name_result.stdout }}"
 
+- name: Delete any existing clusters with same prefix
+  shell: |
+    for cluster in $(aws eks list-clusters --region {{ aws_region }} --query 'clusters[?contains(@, `eks-{{ env_name }}`)]' --output text); do
+      echo "Deleting existing cluster: $cluster"
+      aws eks delete-cluster --name "$cluster" --region {{ aws_region }} || true
+    done
+  ignore_errors: true
+
+- name: Wait for old cluster deletion
+  pause:
+    seconds: 60
+
 - name: Create EKS cluster using AWS CLI
   shell: |
     aws eks create-cluster \
@@ -49,7 +61,6 @@
       --resources-vpc-config subnetIds={{ public_subnet_ids | join(',') }} \
       --region {{ aws_region }}
   register: cluster_creation
-  ignore_errors: true
 
 - name: Wait for cluster to be active
   shell: aws eks wait cluster-active --name {{ unique_cluster_name }} --region {{ aws_region }}
