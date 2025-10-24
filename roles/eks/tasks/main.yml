@@ -89,13 +89,18 @@
     src: cluster-config.yaml.j2
     dest: /tmp/cluster-config.yaml
 
-- name: Force delete any existing cluster
-  shell: eksctl delete cluster --name {{ eks_cluster_name }} --region {{ aws_region }} --wait --force
+- name: Delete CloudFormation stacks directly
+  shell: |
+    aws cloudformation delete-stack --stack-name eksctl-{{ eks_cluster_name }}-cluster --region {{ aws_region }} || true
+    aws cloudformation delete-stack --stack-name eksctl-{{ eks_cluster_name }}-nodegroup-{{ nodegroup_name }} --region {{ aws_region }} || true
+    aws cloudformation delete-stack --stack-name eksctl-{{ eks_cluster_name }}-addon-vpc-cni --region {{ aws_region }} || true
+    aws cloudformation delete-stack --stack-name eksctl-{{ eks_cluster_name }}-addon-coredns --region {{ aws_region }} || true
+    aws cloudformation delete-stack --stack-name eksctl-{{ eks_cluster_name }}-addon-kube-proxy --region {{ aws_region }} || true
   ignore_errors: true
 
-- name: Wait for complete cleanup
+- name: Wait for stack deletion
   pause:
-    seconds: 60
+    seconds: 120
 
 - name: Create EKS cluster
   shell: |
