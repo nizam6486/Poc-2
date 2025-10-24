@@ -89,15 +89,13 @@
     src: cluster-config.yaml.j2
     dest: /tmp/cluster-config.yaml
 
-- name: Check if cluster already exists
-  shell: aws eks describe-cluster --name {{ eks_cluster_name }} --region {{ aws_region }}
-  register: cluster_check
-  failed_when: false
-
-- name: Delete cluster if exists
-  shell: eksctl delete cluster --name {{ eks_cluster_name }} --region {{ aws_region }} --wait
-  when: cluster_check.rc == 0
+- name: Force delete any existing cluster
+  shell: eksctl delete cluster --name {{ eks_cluster_name }} --region {{ aws_region }} --wait --force
   ignore_errors: true
+
+- name: Wait for complete cleanup
+  pause:
+    seconds: 60
 
 - name: Create EKS cluster
   shell: |
