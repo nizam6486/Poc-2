@@ -20,25 +20,20 @@
   delay: 30
   when: nodes_check.rc == 0
 
-- name: Check if nodes exist before deployment
-  shell: kubectl get nodes
-  register: final_node_check
-  failed_when: false
-
-- name: Skip Apache deployment if no nodes
-  debug:
-    msg: "Skipping Apache deployment - no nodes available yet. Cluster may still be initializing."
-  when: final_node_check.rc != 0 or final_node_check.stdout_lines | length == 0
-
 - name: Generate Apache Kubernetes manifest
   template:
     src: apache-deployment.yaml.j2
     dest: /tmp/apache-deployment.yaml
-  when: final_node_check.rc == 0 and final_node_check.stdout_lines | length > 0
 
 - name: Deploy Apache to EKS cluster
   shell: kubectl apply -f /tmp/apache-deployment.yaml
-  when: final_node_check.rc == 0 and final_node_check.stdout_lines | length > 0
+
+- name: Wait for pods to be scheduled
+  shell: kubectl get pods -n {{ apache_namespace }} -l app={{ apache_app_name }} --no-headers
+  register: pod_check
+  until: pod_check.stdout_lines | length > 0
+  retries: 10
+  delay: 30
 
 - name: Wait for deployment to be available
   shell: kubectl wait --for=condition=available deployment/{{ apache_app_name }} -n {{ apache_namespace }} --timeout=300s

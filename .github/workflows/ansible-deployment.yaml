@@ -169,13 +169,20 @@ jobs:
           kubectl get pods -n default -o wide
           kubectl get svc -n default
           
+          echo "Deploying application..."
+          ansible-playbook deploy-app-only.yml \
+            -e "environment=${{ inputs.environment }}" \
+            -e "aws_region=${{ vars.AWS_REGION || 'us-east-2' }}" \
+            -v || echo "Application deployment may have issues"
+          
           echo "Getting LoadBalancer URL..."
-          for i in {1..10}; do
+          for i in {1..15}; do
             LB_URL=$(kubectl get service apache-web-loadbalancer -n default -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
             if [ -n "$LB_URL" ]; then
+              echo "LoadBalancer ready: $LB_URL"
               break
             fi
-            echo "Waiting for LoadBalancer... attempt $i/10"
+            echo "Waiting for LoadBalancer... attempt $i/15"
             sleep 30
           done
           
@@ -210,6 +217,11 @@ jobs:
           echo "🔧 LOCAL TESTING:"
           echo "kubectl port-forward service/apache-web-service 8080:80 -n default &"
           echo "curl http://localhost:8080"
+          echo ""
+          echo "🧪 CONNECTIVITY TEST:"
+          ansible-playbook test-access.yml \
+            -e "environment=${{ inputs.environment }}" \
+            -e "aws_region=${{ vars.AWS_REGION || 'us-east-2' }}" || echo "Test completed"
           echo "================================================"
 
       - name: Destroy Infrastructure

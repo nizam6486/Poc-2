@@ -119,7 +119,7 @@
       --nodes-min {{ nodegroup_min_size }} \
       --nodes-max {{ nodegroup_max_size }} \
       --managed
-  when: cluster_exists.rc == 0 and (nodegroup_exists.rc != 0 or '"nodegroups": []' in nodegroup_exists.stdout)
+  when: cluster_exists.rc == 0 and (nodegroup_exists.rc != 0 or 'nodegroups":[]' in nodegroup_exists.stdout)
   register: nodegroup_creation
   async: 1800
   poll: 60

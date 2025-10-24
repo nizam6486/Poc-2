@@ -14,7 +14,7 @@ spec:
         app: {{ apache_app_name }}
     spec:
       containers:
-      - name: apache
+      - name: nginx
         image: nginx:alpine
         ports:
         - containerPort: 80
@@ -57,10 +57,14 @@ kind: Service
 metadata:
   name: {{ apache_app_name }}-loadbalancer
   namespace: {{ apache_namespace }}
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
 spec:
   selector:
     app: {{ apache_app_name }}
   ports:
   - port: 80
     targetPort: 80
+    protocol: TCP
   type: LoadBalancer

@@ -25,7 +25,7 @@
           --nodes-min 1 \
           --nodes-max 3 \
           --managed
-      when: nodegroup_check.rc != 0 or '"nodegroups": []' in nodegroup_check.stdout
+      when: nodegroup_check.rc != 0 or 'nodegroups":[]' in nodegroup_check.stdout
       async: 1800
       poll: 60
       
