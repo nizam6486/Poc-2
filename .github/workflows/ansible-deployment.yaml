@@ -129,6 +129,12 @@ jobs:
             -e "git_commit=${{ github.sha }}" \
             -e "git_branch=main" \
             -v
+          
+          echo "Ensuring nodegroups are created..."
+          ansible-playbook create-nodegroup.yml \
+            -e "environment=${{ inputs.environment }}" \
+            -e "aws_region=${{ vars.AWS_REGION || 'us-east-2' }}" \
+            -v
 
       - name: Get Application Access URLs
         if: inputs.action == 'deploy'

@@ -95,6 +95,12 @@
   failed_when: false
   changed_when: false
 
+- name: Check if nodegroups exist
+  shell: eksctl get nodegroup --cluster {{ eks_cluster_name }} --region {{ aws_region }}
+  register: nodegroup_exists
+  failed_when: false
+  changed_when: false
+
 - name: Create EKS cluster with eksctl
   shell: eksctl create cluster -f /tmp/cluster-config.yaml
   when: cluster_exists.rc != 0
@@ -102,19 +108,16 @@
   async: 2400
   poll: 60
 
-- name: Wait for cluster creation to complete
-  async_status:
-    jid: "{{ cluster_creation.ansible_job_id }}"
-  register: cluster_job_result
-  until: cluster_job_result.finished
-  retries: 40
-  delay: 60
-  when: cluster_exists.rc != 0
+- name: Create nodegroup only
+  shell: eksctl create nodegroup -f /tmp/cluster-config.yaml
+  when: cluster_exists.rc == 0 and nodegroup_exists.rc != 0
+  register: nodegroup_creation
+  async: 1800
+  poll: 60
 
 - name: Get current AWS identity
   shell: aws sts get-caller-identity --query Arn --output text
   register: current_identity
-  when: cluster_exists.rc != 0
 
 - name: Create EKS access entry for deployment role
   shell: |
@@ -124,7 +127,6 @@
       --type STANDARD \
       --region {{ aws_region }}
   ignore_errors: true
-  when: cluster_exists.rc != 0
 
 - name: Associate admin policy to access entry
   shell: |
@@ -135,12 +137,3 @@
       --access-scope type=cluster \
       --region {{ aws_region }}
   ignore_errors: true
-  when: cluster_exists.rc != 0
-
-- name: Verify cluster is accessible
-  shell: kubectl get svc
-  register: cluster_access
-  retries: 10
-  delay: 30
-  until: cluster_access.rc == 0
-  when: cluster_exists.rc != 0

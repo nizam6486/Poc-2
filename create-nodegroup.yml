@@ -1,0 +1,41 @@
+---
+- name: Create EKS Nodegroup
+  hosts: localhost
+  gather_facts: false
+  
+  vars:
+    env_name: "{{ environment | default('aws-test') }}"
+    aws_region: "{{ aws_region | default('us-east-2') }}"
+    eks_cluster_name: "eks-{{ env_name }}"
+
+  tasks:
+    - name: Check if nodegroups exist
+      shell: eksctl get nodegroup --cluster {{ eks_cluster_name }} --region {{ aws_region }}
+      register: nodegroup_check
+      failed_when: false
+      
+    - name: Create nodegroup if missing
+      shell: |
+        eksctl create nodegroup \
+          --cluster {{ eks_cluster_name }} \
+          --region {{ aws_region }} \
+          --name ng-{{ env_name }} \
+          --node-type t3.medium \
+          --nodes 2 \
+          --nodes-min 1 \
+          --nodes-max 3 \
+          --managed
+      when: nodegroup_check.rc != 0
+      async: 1800
+      poll: 60
+      
+    - name: Wait for nodes to be ready
+      shell: kubectl wait --for=condition=Ready node --all --timeout=600s
+      register: nodes_ready
+      
+    - name: Show cluster status
+      shell: |
+        echo "=== CLUSTER STATUS ==="
+        kubectl get nodes -o wide
+        kubectl get pods --all-namespaces
+        echo "======================"
