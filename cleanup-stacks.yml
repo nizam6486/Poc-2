@@ -1,0 +1,28 @@
+---
+- name: Cleanup CloudFormation Stacks
+  hosts: localhost
+  gather_facts: false
+  
+  vars:
+    env_name: "{{ environment | default('aws-test') }}"
+    aws_region: "{{ aws_region | default('us-east-2') }}"
+    eks_cluster_name: "eks-{{ env_name }}"
+
+  tasks:
+    - name: List existing CloudFormation stacks
+      shell: aws cloudformation list-stacks --region {{ aws_region }} --query 'StackSummaries[?contains(StackName, `eksctl-{{ eks_cluster_name }}`)].StackName' --output text
+      register: existing_stacks
+      
+    - name: Delete existing stacks
+      shell: aws cloudformation delete-stack --stack-name {{ item }} --region {{ aws_region }}
+      loop: "{{ existing_stacks.stdout.split() }}"
+      when: existing_stacks.stdout != ""
+      ignore_errors: true
+      
+    - name: Wait for stack deletion
+      shell: |
+        for stack in {{ existing_stacks.stdout }}; do
+          aws cloudformation wait stack-delete-complete --stack-name $stack --region {{ aws_region }} || true
+        done
+      when: existing_stacks.stdout != ""
+      ignore_errors: true
