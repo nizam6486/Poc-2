@@ -4,12 +4,12 @@
 
 ### 1. Deploy Infrastructure
 ```bash
-ansible-playbook site.yml -e "environment=aws-test" -e "aws_region=us-east-1"
+ansible-playbook site.yml -e "environment=aws-test" -e "aws_region=us-east-2"
 ```
 
 ### 2. Test Deployment
 ```bash
-ansible-playbook test-deployment.yml -e "environment=aws-test" -e "aws_region=us-east-1"
+ansible-playbook test-deployment.yml -e "environment=aws-test" -e "aws_region=us-east-2"
 ```
 
 ### 3. Access Your Application
@@ -51,5 +51,5 @@ kubectl logs -l app=apache-web
 
 ## Cleanup
 ```bash
-ansible-playbook cleanup.yml -e "environment=aws-test" -e "aws_region=us-east-1"
+ansible-playbook cleanup.yml -e "environment=aws-test" -e "aws_region=us-east-2"
 ```

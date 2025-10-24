@@ -5,7 +5,7 @@
 
   vars:
     env_name: "{{ environment | default('uat-edfx') }}"
-    aws_region: "{{ aws_region | default('us-east-1') }}"
+    aws_region: "{{ aws_region | default('us-east-2') }}"
 
   roles:
     - role: vpc
