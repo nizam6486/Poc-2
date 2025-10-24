@@ -25,99 +25,50 @@
     name: "eks-nodegroup-role"
   register: nodegroup_role_info
 
-- name: Get existing EKS Control Plane Security Group
-  amazon.aws.ec2_security_group_info:
-    region: "{{ aws_region }}"
-    filters:
-      "tag:Name": "eks-controlplane-{{ env_name }}"
-      "tag:Environment": "{{ env_name }}"
-  register: control_plane_sg_info
-
-- name: Get existing EKS Worker Nodes Security Group
-  amazon.aws.ec2_security_group_info:
-    region: "{{ aws_region }}"
-    filters:
-      "tag:Name": "eks-workernodes-{{ env_name }}"
-      "tag:Environment": "{{ env_name }}"
-  register: worker_nodes_sg_info
-
 - name: Set facts for EKS configuration
   set_fact:
     vpc_id: "{{ vpc_info.vpcs[0].id }}"
     public_subnet_ids: "{{ public_subnets_info.subnets | map(attribute='id') | list }}"
     cluster_role_arn: "{{ cluster_role_info.iam_roles[0].arn }}"
     nodegroup_role_arn: "{{ nodegroup_role_info.iam_roles[0].arn }}"
-    control_plane_sg_id: "{{ control_plane_sg_info.security_groups[0].group_id }}"
-    worker_nodes_sg_id: "{{ worker_nodes_sg_info.security_groups[0].group_id }}"
 
-- name: Debug all existing resources
-  debug:
-    msg: |
-      🔗 USING EXISTING ANSIBLE RESOURCES:
-      - VPC: {{ vpc_id }}
-      - Public Subnets: {{ public_subnet_ids }}
-      - Cluster Role ARN: {{ cluster_role_arn }}
-      - Node Role ARN: {{ nodegroup_role_arn }}
-      - Control Plane SG: {{ control_plane_sg_id }}
-      - Worker Nodes SG: {{ worker_nodes_sg_id }}
+- name: Generate unique cluster name
+  set_fact:
+    unique_cluster_name: "eks-{{ env_name }}-{{ ansible_date_time.epoch }}"
 
-- name: Validate all resources exist
-  block:
-    - name: Validate public subnets exist
-      fail:
-        msg: "No public subnets found for environment '{{ env_name }}'. Cannot deploy EKS cluster."
-      when: public_subnet_ids | length == 0
-
-    - name: Validate IAM roles exist
-      fail:
-        msg: |
-          Missing IAM roles for EKS cluster:
-          - Cluster Role: {{ cluster_role_info.iam_roles | length > 0 }}
-          - Node Group Role: {{ nodegroup_role_info.iam_roles | length > 0 }}
-      when: cluster_role_info.iam_roles | length == 0 or nodegroup_role_info.iam_roles | length == 0
-
-    - name: Validate security groups exist
-      fail:
-        msg: |
-          Missing security groups for EKS cluster:
-          - Control Plane SG: {{ control_plane_sg_info.security_groups | length > 0 }}
-          - Worker Nodes SG: {{ worker_nodes_sg_info.security_groups | length > 0 }}
-      when: control_plane_sg_info.security_groups | length == 0 or worker_nodes_sg_info.security_groups | length == 0
-
-- name: Generate eksctl cluster config
-  template:
-    src: cluster-config.yaml.j2
-    dest: /tmp/cluster-config.yaml
-
-- name: Delete CloudFormation stacks directly
+- name: Create EKS cluster using AWS CLI
   shell: |
-    aws cloudformation delete-stack --stack-name eksctl-{{ eks_cluster_name }}-cluster --region {{ aws_region }} || true
-    aws cloudformation delete-stack --stack-name eksctl-{{ eks_cluster_name }}-nodegroup-{{ nodegroup_name }} --region {{ aws_region }} || true
-    aws cloudformation delete-stack --stack-name eksctl-{{ eks_cluster_name }}-addon-vpc-cni --region {{ aws_region }} || true
-    aws cloudformation delete-stack --stack-name eksctl-{{ eks_cluster_name }}-addon-coredns --region {{ aws_region }} || true
-    aws cloudformation delete-stack --stack-name eksctl-{{ eks_cluster_name }}-addon-kube-proxy --region {{ aws_region }} || true
+    aws eks create-cluster \
+      --name {{ unique_cluster_name }} \
+      --version {{ eks_version }} \
+      --role-arn {{ cluster_role_arn }} \
+      --resources-vpc-config subnetIds={{ public_subnet_ids | join(',') }} \
+      --region {{ aws_region }}
+  register: cluster_creation
   ignore_errors: true
 
-- name: Wait for stack deletion
-  pause:
-    seconds: 120
+- name: Wait for cluster to be active
+  shell: aws eks wait cluster-active --name {{ unique_cluster_name }} --region {{ aws_region }}
+  when: cluster_creation.rc == 0
 
-- name: Create EKS cluster
+- name: Create managed nodegroup
   shell: |
-    eksctl create cluster \
-      --name {{ eks_cluster_name }} \
-      --region {{ aws_region }} \
+    aws eks create-nodegroup \
+      --cluster-name {{ unique_cluster_name }} \
       --nodegroup-name {{ nodegroup_name }} \
-      --node-type {{ nodegroup_instance_types[0] }} \
-      --nodes {{ nodegroup_desired_size }} \
-      --nodes-min {{ nodegroup_min_size }} \
-      --nodes-max {{ nodegroup_max_size }} \
-      --managed \
-      --with-oidc \
-      --ssh-access=false
-  register: cluster_creation
-  async: 2400
-  poll: 60
+      --subnets {{ public_subnet_ids | join(' ') }} \
+      --node-role {{ nodegroup_role_arn }} \
+      --instance-types {{ nodegroup_instance_types[0] }} \
+      --scaling-config minSize={{ nodegroup_min_size }},maxSize={{ nodegroup_max_size }},desiredSize={{ nodegroup_desired_size }} \
+      --disk-size {{ nodegroup_disk_size }} \
+      --ami-type {{ nodegroup_ami_type }} \
+      --capacity-type {{ nodegroup_capacity_type }} \
+      --region {{ aws_region }}
+  when: cluster_creation.rc == 0
+
+- name: Wait for nodegroup to be active
+  shell: aws eks wait nodegroup-active --cluster-name {{ unique_cluster_name }} --nodegroup-name {{ nodegroup_name }} --region {{ aws_region }}
+  when: cluster_creation.rc == 0
 
 - name: Get current AWS identity
   shell: aws sts get-caller-identity --query Arn --output text
@@ -126,7 +77,7 @@
 - name: Create EKS access entry for deployment role
   shell: |
     aws eks create-access-entry \
-      --cluster-name {{ eks_cluster_name }} \
+      --cluster-name {{ unique_cluster_name }} \
       --principal-arn {{ current_identity.stdout }} \
       --type STANDARD \
       --region {{ aws_region }}
@@ -135,9 +86,13 @@
 - name: Associate admin policy to access entry
   shell: |
     aws eks associate-access-policy \
-      --cluster-name {{ eks_cluster_name }} \
+      --cluster-name {{ unique_cluster_name }} \
       --principal-arn {{ current_identity.stdout }} \
       --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
       --access-scope type=cluster \
       --region {{ aws_region }}
   ignore_errors: true
+
+- name: Update cluster name for subsequent tasks
+  set_fact:
+    eks_cluster_name: "{{ unique_cluster_name }}"
