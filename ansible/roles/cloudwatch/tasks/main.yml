@@ -1,0 +1,181 @@
+---
+- name: Create amazon-cloudwatch namespace
+  shell: kubectl create namespace amazon-cloudwatch
+  ignore_errors: true
+
+- name: Get OIDC issuer URL
+  shell: aws eks describe-cluster --name {{ cluster_name }} --region {{ region }} --query "cluster.identity.oidc.issuer" --output text
+  register: oidc_issuer_url
+
+- name: Extract OIDC issuer
+  set_fact:
+    oidc_issuer: "{{ oidc_issuer_url.stdout | regex_replace('https://') }}"
+
+- name: Create IAM role for CloudWatch agent
+  amazon.aws.iam_role:
+    name: "{{ cluster_name }}-cloudwatch-role"
+    assume_role_policy_document: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Federated": "arn:aws:iam::{{ ansible_account_id }}:oidc-provider/{{ oidc_issuer }}"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+              "StringEquals": {
+                "{{ oidc_issuer }}:sub": "system:serviceaccount:amazon-cloudwatch:cloudwatch-agent"
+              }
+            }
+          }
+        ]
+      }
+    managed_policies:
+      - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+    state: present
+
+- name: Create CloudWatch service account
+  shell: |
+    kubectl create serviceaccount cloudwatch-agent -n amazon-cloudwatch
+    kubectl annotate serviceaccount cloudwatch-agent -n amazon-cloudwatch eks.amazonaws.com/role-arn=arn:aws:iam::{{ ansible_account_id }}:role/{{ cluster_name }}-cloudwatch-role
+  ignore_errors: true
+
+- name: Deploy CloudWatch agent
+  shell: |
+    kubectl apply -f - <<EOF
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: cwagentconfig
+      namespace: amazon-cloudwatch
+    data:
+      cwagentconfig.json: |
+        {
+          "logs": {
+            "metrics_collected": {
+              "kubernetes": {
+                "cluster_name": "{{ cluster_name }}",
+                "metrics_collection_interval": 60
+              }
+            }
+          },
+          "metrics": {
+            "namespace": "ContainerInsights",
+            "metrics_collected": {
+              "cpu": {
+                "measurement": ["cpu_usage_idle", "cpu_usage_user", "cpu_usage_system"],
+                "metrics_collection_interval": 60
+              },
+              "mem": {
+                "measurement": ["mem_used_percent"],
+                "metrics_collection_interval": 60
+              }
+            }
+          }
+        }
+    ---
+    apiVersion: apps/v1
+    kind: DaemonSet
+    metadata:
+      name: cloudwatch-agent
+      namespace: amazon-cloudwatch
+    spec:
+      selector:
+        matchLabels:
+          name: cloudwatch-agent
+      template:
+        metadata:
+          labels:
+            name: cloudwatch-agent
+        spec:
+          serviceAccountName: cloudwatch-agent
+          containers:
+          - name: cloudwatch-agent
+            image: amazon/cloudwatch-agent:1.247358.0b251814
+            env:
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: HOST_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            volumeMounts:
+            - name: cwagentconfig
+              mountPath: /etc/cwagentconfig
+            - name: rootfs
+              mountPath: /rootfs
+              readOnly: true
+            - name: dockersock
+              mountPath: /var/run/docker.sock
+              readOnly: true
+            - name: sys
+              mountPath: /sys
+              readOnly: true
+          volumes:
+          - name: cwagentconfig
+            configMap:
+              name: cwagentconfig
+          - name: rootfs
+            hostPath:
+              path: /
+          - name: dockersock
+            hostPath:
+              path: /var/run/docker.sock
+          - name: sys
+            hostPath:
+              path: /sys
+    EOF
+
+- name: Enable Container Insights
+  shell: |
+    curl https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/quickstart/cwagent-fluentd-quickstart.yaml | sed "s/{{cluster_name}}/{{ cluster_name }}/;s/{{region_name}}/{{ region }}/" | kubectl apply -f -
+
+- name: Create CloudWatch dashboard
+  shell: |
+    aws cloudwatch put-dashboard --region {{ region }} --dashboard-name "{{ cluster_name }}-EKS" --dashboard-body '{
+      "widgets": [
+        {
+          "type": "metric",
+          "x": 0,
+          "y": 0,
+          "width": 12,
+          "height": 6,
+          "properties": {
+            "metrics": [
+              [ "AWS/ContainerInsights", "cluster_node_count", "ClusterName", "{{ cluster_name }}" ]
+            ],
+            "region": "{{ region }}",
+            "title": "Node Count"
+          }
+        },
+        {
+          "type": "metric",
+          "x": 12,
+          "y": 0,
+          "width": 12,
+          "height": 6,
+          "properties": {
+            "metrics": [
+              [ "AWS/ContainerInsights", "pod_cpu_utilization", "ClusterName", "{{ cluster_name }}" ]
+            ],
+            "region": "{{ region }}",
+            "title": "Pod CPU"
+          }
+        }
+      ]
+    }'
+
+- name: Display CloudWatch setup
+  debug:
+    msg:
+      - "CloudWatch Container Insights enabled"
+      - "Dashboard: {{ cluster_name }}-EKS"
+      - "Namespace: amazon-cloudwatch"

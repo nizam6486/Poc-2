@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudwatch-alarms
+  namespace: amazon-cloudwatch
+data:
+  create-alarms.sh: |
+    #!/bin/bash
+    CLUSTER_NAME="${CLUSTER_NAME:-devops-eks-cluster}"
+    REGION="${AWS_REGION:-us-west-2}"
+    
+    # High CPU Utilization Alarm
+    aws cloudwatch put-metric-alarm \
+      --alarm-name "${CLUSTER_NAME}-HighCPU" \
+      --alarm-description "High CPU utilization on EKS cluster" \
+      --metric-name pod_cpu_utilization \
+      --namespace AWS/ContainerInsights \
+      --statistic Average \
+      --period 300 \
+      --threshold 80 \
+      --comparison-operator GreaterThanThreshold \
+      --evaluation-periods 2 \
+      --dimensions Name=ClusterName,Value=${CLUSTER_NAME} \
+      --region ${REGION}
+    
+    # High Memory Utilization Alarm
+    aws cloudwatch put-metric-alarm \
+      --alarm-name "${CLUSTER_NAME}-HighMemory" \
+      --alarm-description "High memory utilization on EKS cluster" \
+      --metric-name pod_memory_utilization \
+      --namespace AWS/ContainerInsights \
+      --statistic Average \
+      --period 300 \
+      --threshold 80 \
+      --comparison-operator GreaterThanThreshold \
+      --evaluation-periods 2 \
+      --dimensions Name=ClusterName,Value=${CLUSTER_NAME} \
+      --region ${REGION}
+    
+    # Node Count Alarm
+    aws cloudwatch put-metric-alarm \
+      --alarm-name "${CLUSTER_NAME}-LowNodeCount" \
+      --alarm-description "Low node count in EKS cluster" \
+      --metric-name cluster_node_count \
+      --namespace AWS/ContainerInsights \
+      --statistic Average \
+      --period 300 \
+      --threshold 1 \
+      --comparison-operator LessThanThreshold \
+      --evaluation-periods 1 \
+      --dimensions Name=ClusterName,Value=${CLUSTER_NAME} \
+      --region ${REGION}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: setup-cloudwatch-alarms
+  namespace: amazon-cloudwatch
+spec:
+  template:
+    spec:
+      serviceAccountName: cloudwatch-agent
+      containers:
+      - name: alarm-setup
+        image: amazon/aws-cli:latest
+        env:
+        - name: CLUSTER_NAME
+          value: "devops-eks-cluster"
+        - name: AWS_REGION
+          value: "us-west-2"
+        command: ["/bin/bash"]
+        args: ["/scripts/create-alarms.sh"]
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+      volumes:
+      - name: scripts
+        configMap:
+          name: cloudwatch-alarms
+          defaultMode: 0755
+      restartPolicy: OnFailure

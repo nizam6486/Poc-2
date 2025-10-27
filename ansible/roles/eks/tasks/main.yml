@@ -248,6 +248,11 @@
   register: prometheus_url
   ignore_errors: true
 
+- name: Setup CloudWatch monitoring
+  include_role:
+    name: cloudwatch
+  when: enable_cloudwatch | default(true)
+
 - name: Display cluster information
   debug:
     msg:
@@ -259,3 +264,4 @@
       - "Grafana URL: http://{{ grafana_url.stdout | default('Still provisioning') }}"
       - "Grafana Login: admin / admin123"
       - "Prometheus URL: http://{{ prometheus_url.stdout | default('Still provisioning') }}"
+      - "CloudWatch Dashboard: {{ cluster_name }}-EKS"
