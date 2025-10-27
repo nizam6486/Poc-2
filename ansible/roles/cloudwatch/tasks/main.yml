@@ -42,6 +42,10 @@
     kubectl annotate serviceaccount cloudwatch-agent -n amazon-cloudwatch eks.amazonaws.com/role-arn=arn:aws:iam::{{ ansible_account_id }}:role/{{ cluster_name }}-cloudwatch-role
   ignore_errors: true
 
+- name: Delete existing CloudWatch pods
+  shell: kubectl delete pods --all -n amazon-cloudwatch
+  ignore_errors: true
+
 - name: Deploy CloudWatch agent
   shell: |
     kubectl apply -f - <<EOF
@@ -53,23 +57,13 @@
     data:
       cwagentconfig.json: |
         {
+          "agent": {
+            "region": "{{ region }}"
+          },
           "logs": {
             "metrics_collected": {
               "kubernetes": {
                 "cluster_name": "{{ cluster_name }}",
-                "metrics_collection_interval": 60
-              }
-            }
-          },
-          "metrics": {
-            "namespace": "ContainerInsights",
-            "metrics_collected": {
-              "cpu": {
-                "measurement": ["cpu_usage_idle", "cpu_usage_user", "cpu_usage_system"],
-                "metrics_collection_interval": 60
-              },
-              "mem": {
-                "measurement": ["mem_used_percent"],
                 "metrics_collection_interval": 60
               }
             }
@@ -93,7 +87,7 @@
           serviceAccountName: cloudwatch-agent
           containers:
           - name: cloudwatch-agent
-            image: amazon/cloudwatch-agent:1.247358.0b251814
+            image: public.ecr.aws/cloudwatch-agent/cloudwatch-agent:1.300032.2b361
             env:
             - name: HOST_IP
               valueFrom:
@@ -107,6 +101,15 @@
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: CI_VERSION
+              value: "k8s/1.3.22"
+            resources:
+              limits:
+                cpu: 200m
+                memory: 200Mi
+              requests:
+                cpu: 200m
+                memory: 200Mi
             volumeMounts:
             - name: cwagentconfig
               mountPath: /etc/cwagentconfig
@@ -116,8 +119,14 @@
             - name: dockersock
               mountPath: /var/run/docker.sock
               readOnly: true
+            - name: varlibdocker
+              mountPath: /var/lib/docker
+              readOnly: true
             - name: sys
               mountPath: /sys
+              readOnly: true
+            - name: devdisk
+              mountPath: /dev/disk
               readOnly: true
           volumes:
           - name: cwagentconfig
@@ -129,15 +138,21 @@
           - name: dockersock
             hostPath:
               path: /var/run/docker.sock
+          - name: varlibdocker
+            hostPath:
+              path: /var/lib/docker
           - name: sys
             hostPath:
               path: /sys
+          - name: devdisk
+            hostPath:
+              path: /dev/disk
+          terminationGracePeriodSeconds: 60
     EOF
 
 - name: Enable Container Insights
   shell: |
-    kubectl apply -f https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/cloudwatch-namespace.yaml
-    kubectl create configmap cluster-info --from-literal=cluster.name={{ cluster_name }} --from-literal=logs.region={{ region }} -n amazon-cloudwatch
+    kubectl create configmap fluent-bit-cluster-info --from-literal=cluster.name={{ cluster_name }} --from-literal=logs.region={{ region }} -n amazon-cloudwatch
     kubectl apply -f https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/fluent-bit/fluent-bit.yaml
 
 - name: Create CloudWatch dashboard
