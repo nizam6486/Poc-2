@@ -202,8 +202,38 @@
       --region {{ region }}
   ignore_errors: true
 
-- name: Wait for EBS CSI driver to be active
-  shell: aws eks wait addon-active --cluster-name {{ cluster_name }} --addon-name aws-ebs-csi-driver --region {{ region }}
+- name: Create monitoring namespace
+  shell: kubectl create namespace monitoring
+  ignore_errors: true
+
+- name: Add Helm repositories
+  shell: |
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+    helm repo add grafana https://grafana.github.io/helm-charts
+    helm repo update
+
+- name: Install kube-prometheus-stack
+  shell: |
+    helm install prometheus prometheus-community/kube-prometheus-stack \
+      --namespace monitoring \
+      --set prometheus.service.type=LoadBalancer \
+      --set grafana.service.type=LoadBalancer \
+      --set grafana.adminPassword=admin123 \
+      --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
+      --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false
+
+- name: Wait for monitoring stack to be ready
+  pause:
+    seconds: 60
+
+- name: Get Grafana LoadBalancer URL
+  shell: kubectl get svc prometheus-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  register: grafana_url
+  ignore_errors: true
+
+- name: Get Prometheus LoadBalancer URL
+  shell: kubectl get svc prometheus-kube-prometheus-prometheus -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  register: prometheus_url
   ignore_errors: true
 
 - name: Display cluster information
@@ -214,3 +244,6 @@
       - "CloudFormation Stack: {{ cluster_name }}-stack"
       - "EBS CSI Driver: Installed"
       - "Kubeconfig updated at ~/.kube/config"
+      - "Grafana URL: http://{{ grafana_url.stdout | default('Still provisioning') }}"
+      - "Grafana Login: admin / admin123"
+      - "Prometheus URL: http://{{ prometheus_url.stdout | default('Still provisioning') }}"
