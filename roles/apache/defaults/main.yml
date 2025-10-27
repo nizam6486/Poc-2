@@ -1,9 +1,0 @@
----
-# Apache deployment configuration
-apache_namespace: default
-apache_app_name: apache-web
-apache_replicas: 1
-apache_image: nginx:alpine
-apache_port: 80
-apache_service_type: NodePort
-apache_nodeport: 30080

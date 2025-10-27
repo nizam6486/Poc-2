@@ -1,0 +1,9 @@
+---
+- name: Provision EKS Cluster
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  collections:
+    - amazon.aws
+  roles:
+    - eks
