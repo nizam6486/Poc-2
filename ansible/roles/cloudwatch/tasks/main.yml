@@ -136,10 +136,9 @@
 
 - name: Enable Container Insights
   shell: |
-    curl -s https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/quickstart/cwagent-fluentd-quickstart.yaml | \
-    sed 's/{{cluster_name}}/{{ cluster_name }}/g' | \
-    sed 's/{{region_name}}/{{ region }}/g' | \
-    kubectl apply -f -
+    kubectl apply -f https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/cloudwatch-namespace.yaml
+    kubectl create configmap cluster-info --from-literal=cluster.name={{ cluster_name }} --from-literal=logs.region={{ region }} -n amazon-cloudwatch
+    kubectl apply -f https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/fluent-bit/fluent-bit.yaml
 
 - name: Create CloudWatch dashboard
   shell: |
