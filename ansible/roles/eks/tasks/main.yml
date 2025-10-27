@@ -192,6 +192,7 @@
               - {{ private_subnets.results[1].subnet.id }}
             InstanceTypes:
               - {{ node_instance_type }}
+            DiskSize: 30
             ScalingConfig:
               MinSize: {{ node_min_size }}
               MaxSize: {{ node_max_size }}
