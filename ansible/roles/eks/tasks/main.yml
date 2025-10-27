@@ -194,10 +194,23 @@
 - name: Generate kubeconfig
   shell: aws eks update-kubeconfig --region {{ region }} --name {{ cluster_name }}
 
+- name: Install EBS CSI driver addon
+  shell: |
+    aws eks create-addon \
+      --cluster-name {{ cluster_name }} \
+      --addon-name aws-ebs-csi-driver \
+      --region {{ region }}
+  ignore_errors: true
+
+- name: Wait for EBS CSI driver to be active
+  shell: aws eks wait addon-active --cluster-name {{ cluster_name }} --addon-name aws-ebs-csi-driver --region {{ region }}
+  ignore_errors: true
+
 - name: Display cluster information
   debug:
     msg:
       - "EKS Cluster: {{ cluster_name }} created successfully"
       - "Region: {{ region }}"
       - "CloudFormation Stack: {{ cluster_name }}-stack"
+      - "EBS CSI Driver: Installed"
       - "Kubeconfig updated at ~/.kube/config"
