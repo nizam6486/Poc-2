@@ -64,7 +64,19 @@
     region: "{{ region }}"
     tags:
       Name: "{{ cluster_name }}-nat-gw"
+    wait: true
+    wait_timeout: 600
   register: nat_gw
+
+- name: Wait for NAT Gateway to be available
+  amazon.aws.ec2_vpc_nat_gateway_info:
+    nat_gateway_ids:
+      - "{{ nat_gw.nat_gateway_id }}"
+    region: "{{ region }}"
+  register: nat_gw_info
+  until: nat_gw_info.result[0].state == "available"
+  retries: 30
+  delay: 20
 
 - name: Create route table for public subnets
   amazon.aws.ec2_vpc_route_table:
